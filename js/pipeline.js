@@ -70,12 +70,34 @@
   /** 偵測邊界，回傳正規化四角（失敗回傳 null） */
   Pipeline.detect = function (srcCanvas) {
     const coarse = CV.detectQuad(srcCanvas);
-    if (!coarse) return null;
-    try {
-      return CV.refineQuad(srcCanvas, coarse);
-    } catch (e) {
-      return coarse;
+    if (coarse) {
+      try {
+        return { quad: CV.refineQuad(srcCanvas, coarse), auto: true };
+      } catch (e) {
+        return { quad: coarse, auto: true };
+      }
     }
+    // 偵測不確定：改用符合版面比例的置中框，並用較大搜尋半徑吸附邊緣
+    const dq = Pipeline.defaultQuad(srcCanvas.width, srcCanvas.height);
+    try {
+      return { quad: CV.refineQuad(srcCanvas, dq, 0.05), auto: false };
+    } catch (e) {
+      return { quad: dq, auto: false };
+    }
+  };
+
+  /** 依影像方向給出符合常見紙張比例的置中框 */
+  Pipeline.defaultQuad = function (w, h) {
+    const ar = h >= w ? 0.707 : 1.414;   // 寬 / 高
+    let bw = w * 0.92, bh = bw / ar;
+    if (bh > h * 0.92) { bh = h * 0.92; bw = bh * ar; }
+    const x0 = (w - bw) / 2, y0 = (h - bh) / 2;
+    return [
+      { x: x0 / w, y: y0 / h },
+      { x: (x0 + bw) / w, y: y0 / h },
+      { x: (x0 + bw) / w, y: (y0 + bh) / h },
+      { x: x0 / w, y: (y0 + bh) / h }
+    ];
   };
 
   /**

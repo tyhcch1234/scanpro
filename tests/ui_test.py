@@ -56,10 +56,11 @@ def main():
                     for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
                     const blob = new Blob([arr], { type: 'image/jpeg' });
                     const src = await Pipeline.decode(blob, 1400);
-                    const quad = Pipeline.detect(src);
+                    const det = Pipeline.detect(src);
+                    const quad = det.quad;
                     const t0 = performance.now();
                     const pageObj = {
-                        quad: quad || Pipeline.fullQuad(),
+                        quad: quad,
                         settings: Pipeline.defaultSettings(),
                         strokes: []
                     };
@@ -112,7 +113,7 @@ def main():
         # 開啟編輯器
         page.click(".card:nth-child(1) .card-img")
         page.wait_for_selector("#editor:not(.hidden)", timeout=10000)
-        page.wait_for_timeout(1200)
+        page.wait_for_timeout(1800)
         page.screenshot(path=str(OUT / "03_editor_crop.png"))
 
         # 自動偵測

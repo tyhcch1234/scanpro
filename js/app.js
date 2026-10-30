@@ -88,8 +88,9 @@
         page.srcW = src.width;
         page.srcH = src.height;
 
-        const q = Pipeline.detect(src);
-        if (q) page.quad = q;
+        const det = Pipeline.detect(src);
+        page.quad = det.quad;
+        page.autoDetected = det.auto;
 
         const out = Pipeline.render(src, page, Pipeline.THUMB_DIM);
         page.thumb = Pipeline.thumb(out, Pipeline.THUMB_DIM);

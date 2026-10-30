@@ -352,6 +352,7 @@ body {
 .stage-toggle:hover { border-color: var(--accent); color: #fff; }
 
 .ed-loading {
+  pointer-events: none;
   position: absolute; inset: 0;
   background: rgba(7, 10, 14, .74);
   backdrop-filter: blur(3px);

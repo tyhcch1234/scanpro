@@ -197,10 +197,11 @@
     return out;
   }
 
-  function largestComponent(mask, w, h) {
+  /** 取出前 k 大的連通域（依外接框面積） */
+  function topComponents(mask, w, h, k) {
     const label = new Uint8Array(w * h);
     const stack = new Int32Array(w * h);
-    let best = null;
+    const comps = [];
 
     for (let start = 0; start < mask.length; start++) {
       if (!mask[start] || label[start]) continue;
@@ -225,33 +226,115 @@
         if (y < h - 1 && mask[p + w] && !label[p + w]) { label[p + w] = 1; stack[sp++] = p + w; }
       }
 
-      const bboxArea = (comp.maxX - comp.minX + 1) * (comp.maxY - comp.minY + 1);
-      comp.bboxArea = bboxArea;
-      if (!best || bboxArea > best.bboxArea ||
-          (bboxArea === best.bboxArea && comp.count > best.count)) {
-        best = comp;
-      }
+      comp.bboxArea = (comp.maxX - comp.minX + 1) * (comp.maxY - comp.minY + 1);
+      comps.push(comp);
     }
-    return best;
+
+    comps.sort(function (a, b) { return b.bboxArea - a.bboxArea; });
+    return comps.slice(0, k);
   }
 
-  /** 從遮罩的最大連通域抓四個極值角點 */
+  /** 從連通域的極值點抓四個角 */
   function quadFromComponent(comp, w, h) {
     if (!comp || comp.px.length < 40) return null;
     const pts = [];
-    const step = Math.max(1, Math.floor(comp.px.length / 6000));
+    const step = Math.max(1, Math.floor(comp.px.length / 8000));
     for (let i = 0; i < comp.px.length; i += step) {
       const p = comp.px[i];
       pts.push({ x: p % w, y: (p - (p % w)) / w });
     }
     const q = CV.orderQuad(pts);
-    // 去重：四個角必須明顯不同
     for (let i = 0; i < 4; i++) {
       for (let j = i + 1; j < 4; j++) {
         if (CV.dist(q[i], q[j]) < Math.min(w, h) * 0.08) return null;
       }
     }
     return q;
+  }
+
+  function pointInQuad(x, y, q) {
+    let inside = false;
+    for (let i = 0, j = 3; i < 4; j = i++) {
+      const xi = q[i].x, yi = q[i].y, xj = q[j].x, yj = q[j].y;
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  function percentileOf(arr, p) {
+    const hist = new Uint32Array(512);
+    let n = 0;
+    for (let i = 0; i < arr.length; i++) {
+      let v = arr[i] | 0;
+      if (v < 0) v = 0; else if (v > 511) v = 511;
+      hist[v]++; n++;
+    }
+    const target = n * p;
+    let acc = 0;
+    for (let v = 0; v < 512; v++) { acc += hist[v]; if (acc >= target) return v; }
+    return 511;
+  }
+
+  /**
+   * 評估一個四邊形「像不像一張紙」：
+   * 四邊是否都貼在真實邊緣上、內部是否比外部亮、面積是否合理
+   */
+  function scoreQuad(gray, mag, q, w, h, ref) {
+    if (!ref) ref = percentileOf(mag, 0.95) || 1;
+    const sup = [];
+
+    for (let e = 0; e < 4; e++) {
+      const a = q[e], b = q[(e + 1) % 4];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const L = Math.sqrt(dx * dx + dy * dy);
+      if (L < Math.min(w, h) * 0.15) return -1;
+      const nx = -dy / L, ny = dx / L;
+      let acc = 0, cnt = 0;
+      for (let k = 1; k <= 15; k++) {
+        const t = 0.06 + 0.88 * k / 16;
+        const px = a.x + dx * t, py = a.y + dy * t;
+        let m = 0;
+        for (let d = -2; d <= 2; d++) {
+          const v = sampleBilinear(mag, w, h, px + nx * d, py + ny * d);
+          if (v > m) m = v;
+        }
+        acc += m; cnt++;
+      }
+      sup.push(Math.min(1, (acc / cnt) / ref));
+    }
+
+    const sMean = (sup[0] + sup[1] + sup[2] + sup[3]) / 4;
+    const sMin = Math.min(sup[0], Math.min(sup[1], Math.min(sup[2], sup[3])));
+
+    let sum = 0, c = 0;
+    for (let gy = 0; gy < 9; gy++) {
+      for (let gx = 0; gx < 9; gx++) {
+        const px = (gx + 0.5) / 9 * w, py = (gy + 0.5) / 9 * h;
+        if (pointInQuad(px, py, q)) { sum += sampleBilinear(gray, w, h, px, py); c++; }
+      }
+    }
+    const inside = c ? (sum / c) / 255 : 0;
+
+    const areaFrac = Math.abs(CV.quadArea(q)) / (w * h);
+
+    let touch = 0;
+    for (let i = 0; i < 4; i++) {
+      const p = q[i];
+      if (p.x < w * 0.012 || p.y < h * 0.012 || p.x > w * 0.988 || p.y > h * 0.988) touch++;
+    }
+    const penalty = 1 - 0.1 * touch;
+
+    // 版面比例先驗：文件幾乎不是正方形
+    const wTop = CV.dist(q[0], q[1]), wBot = CV.dist(q[3], q[2]);
+    const hL = CV.dist(q[0], q[3]), hR = CV.dist(q[1], q[2]);
+    let ratio = ((wTop + wBot) / 2) / Math.max(1, (hL + hR) / 2);
+    if (ratio > 1) ratio = 1 / ratio;
+    let arPenalty = 1;
+    if (ratio > 0.86) arPenalty = 0.74;
+    else if (ratio < 0.44) arPenalty = 0.86;
+
+    return (0.55 * (0.5 * sMean + 0.5 * sMin) + 0.25 * inside +
+      0.20 * Math.min(1, areaFrac / 0.72)) * penalty * arPenalty;
   }
 
   /**
@@ -268,7 +351,6 @@
     const blurred = CV.blurGauss(gray.g, w, h, 1);
     const mag = CV.sobel(blurred, w, h);
 
-    // 梯度統計
     let sum = 0, sum2 = 0, n = 0;
     for (let i = 0; i < mag.length; i++) {
       const v = mag[i];
@@ -279,29 +361,47 @@
     const mean = sum / n;
     const std = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
 
-    const factors = [0.9, 1.4, 2.0, 2.9];
-    let best = null, bestArea = 0;
-
-    for (const f of factors) {
-      const th = Math.max(mean + f * std, 18);
+    const cands = [];
+    const factors = [0.8, 1.3, 1.9, 2.6];
+    for (let fi = 0; fi < factors.length; fi++) {
+      const th = Math.max(mean + factors[fi] * std, 14);
       const mask = new Uint8Array(w * h);
       for (let i = 0; i < mask.length; i++) mask[i] = mag[i] > th ? 1 : 0;
-
       const d = dilate(mask, w, h);
-      const comp = largestComponent(d, w, h);
-      if (!comp) continue;
-      const q = quadFromComponent(comp, w, h);
-      if (!q) continue;
-      if (!CV.validQuad(q, w, h)) continue;
+      const comps = topComponents(d, w, h, 4);
+      for (let ci = 0; ci < comps.length; ci++) {
+        const q = quadFromComponent(comps[ci], w, h);
+        if (q && CV.validQuad(q, w, h)) cands.push(q);
+      }
+    }
 
-      const area = CV.quadArea(q);
-      if (area > bestArea) { bestArea = area; best = q; }
+    // 整幅影像也是候選（避免完全偵測失敗時亂裁）
+    cands.push([{ x: 0, y: 0 }, { x: w - 1, y: 0 }, { x: w - 1, y: h - 1 }, { x: 0, y: h - 1 }]);
+
+    let best = null, bestScore = 0.33;
+    const refMag = percentileOf(mag, 0.95) || 1;
+    const seen = [];
+    for (let i = 0; i < cands.length; i++) {
+      const q = cands[i];
+      // 去重
+      let dup = false;
+      for (let j = 0; j < seen.length; j++) {
+        let d = 0;
+        for (let k = 0; k < 4; k++) d += CV.dist(q[k], seen[j][k]);
+        if (d / 4 < Math.min(w, h) * 0.03) { dup = true; break; }
+      }
+      if (dup) continue;
+      seen.push(q);
+
+      const sc = scoreQuad(blurred, mag, q, w, h, refMag);
+      if (sc > bestScore) { bestScore = sc; best = q; }
     }
 
     if (!best) return null;
-    return best.map(function (p) {
+    const norm = best.map(function (p) {
       return { x: p.x / w, y: p.y / h };
     });
+    return norm;
   };
 
   /* ---------------- 邊緣精修（吸附到最強梯度） ---------------- */
@@ -328,7 +428,7 @@
    * 把偵測到的四邊各自吸附到最強梯度，再以擬合直線求交點
    * 可同時修正邊的位移與角度誤差
    */
-  CV.refineQuad = function (canvas, quadNorm) {
+  CV.refineQuad = function (canvas, quadNorm, radiusFrac) {
     const work = Math.max(canvas.width, canvas.height) > 1200 ? CV.drawTo(canvas, 1200) : canvas;
     const W = work.width, H = work.height;
     const g = CV.gray(work);
@@ -336,7 +436,7 @@
     const mag = CV.sobel(blurred, W, H);
 
     const q = quadNorm.map(function (p) { return { x: p.x * W, y: p.y * H }; });
-    const R = Math.max(6, Math.round(Math.min(W, H) * 0.022));
+    const R = Math.max(6, Math.round(Math.min(W, H) * (radiusFrac || 0.022)));
     const lines = [];
 
     for (let e = 0; e < 4; e++) {
@@ -868,6 +968,8 @@
     for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4] > 127 ? 1 : 0;
     return mask;
   };
+
+  CV.__debug = { dilate: dilate, topComponents: topComponents, quadFromComponent: quadFromComponent, scoreQuad: scoreQuad, percentileOf: percentileOf };
 
   global.CV = CV;
 })(window);

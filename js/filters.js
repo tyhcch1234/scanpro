@@ -48,50 +48,103 @@
     return lum;
   }
 
-  /* ---------------- 1. 智慧去陰影（背景除法正規化） ---------------- */
+  /* ---------------- 1. 智慧去陰影（紙張亮度包絡除法） ----------------
+   * 以「區塊百分位」估計紙張本身的亮度（不受文字、格線拖低），
+   * 再做大尺度平滑，避免在文字周圍產生光暈與斑塊。
+   * ------------------------------------------------------------------ */
 
   function removeShadow(canvas, strength) {
     const R = read(canvas);
-    const { d, w, h, n } = R;
-    const lum = lumOf(d, n);
+    const { d, w, h } = R;
+    const lum = lumOf(d, R.n);
 
-    // 降採樣取低頻背景
-    const ds = 4;
-    const sw = Math.ceil(w / ds), sh = Math.ceil(h / ds);
-    const small = new Float32Array(sw * sh);
-    const cnt = new Float32Array(sw * sh);
-    for (let y = 0; y < h; y++) {
-      const row = ((y / ds) | 0) * sw, src = y * w;
-      for (let x = 0; x < w; x++) {
-        const si = row + ((x / ds) | 0);
-        small[si] += lum[src + x];
-        cnt[si] += 1;
+    const BS = Math.max(6, Math.round(Math.min(w, h) / 32));
+    const bw = Math.ceil(w / BS), bh = Math.ceil(h / BS);
+    const env = new Float32Array(bw * bh);
+    const hist = new Uint32Array(256);
+    const step = BS > 26 ? 2 : 1;
+
+    for (let by = 0; by < bh; by++) {
+      const y0 = by * BS, y1 = Math.min(h, y0 + BS);
+      for (let bx = 0; bx < bw; bx++) {
+        const x0 = bx * BS, x1 = Math.min(w, x0 + BS);
+        hist.fill(0);
+        let total = 0;
+        for (let y = y0; y < y1; y += step) {
+          const row = y * w;
+          for (let x = x0; x < x1; x += step) {
+            hist[lum[row + x] | 0]++;
+            total++;
+          }
+        }
+        const target = total * 0.82;
+        let acc = 0, v = 0;
+        for (; v < 256; v++) { acc += hist[v]; if (acc >= target) break; }
+        env[by * bw + bx] = v > 255 ? 255 : v;
       }
     }
-    for (let i = 0; i < small.length; i++) small[i] = cnt[i] ? small[i] / cnt[i] : 255;
 
-    const r = Math.max(2, Math.round(Math.min(sw, sh) / 7));
-    const bg = CV.blurGauss(small, sw, sh, r);
+    // 兩次 3x3 平滑，消掉區塊接縫
+    const envS = CV.boxBlurF(CV.boxBlurF(env, bw, bh, 1), bw, bh, 1);
+    const fx = bw / w, fy = bh / h;
 
     for (let y = 0; y < h; y++) {
-      const fy = Math.min(sh - 1.001, Math.max(0, y / ds));
-      const y0 = fy | 0, y1 = Math.min(sh - 1, y0 + 1), ty = fy - y0;
-      const r0 = y0 * sw, r1 = y1 * sw;
-      const row = y * w;
+      const gy = Math.min(bh - 1.001, Math.max(0, (y + 0.5) * fy - 0.5));
+      const y0 = gy | 0, y1 = Math.min(bh - 1, y0 + 1), ty = gy - y0;
+      const r0 = y0 * bw, r1 = y1 * bw, row = y * w;
       for (let x = 0; x < w; x++) {
-        const fx = Math.min(sw - 1.001, Math.max(0, x / ds));
-        const x0 = fx | 0, x1 = Math.min(sw - 1, x0 + 1), tx = fx - x0;
-        const b = (bg[r0 + x0] * (1 - tx) + bg[r0 + x1] * tx) * (1 - ty) +
-          (bg[r1 + x0] * (1 - tx) + bg[r1 + x1] * tx) * ty;
-        let g = 246 / (b < 18 ? 18 : b);
-        if (g > 3.4) g = 3.4; else if (g < 0.5) g = 0.5;
-        g = 1 + (g - 1) * strength;
+        const gx = Math.min(bw - 1.001, Math.max(0, (x + 0.5) * fx - 0.5));
+        const x0 = gx | 0, x1 = Math.min(bw - 1, x0 + 1), tx = gx - x0;
+        const cand = (envS[r0 + x0] * (1 - tx) + envS[r0 + x1] * tx) * (1 - ty) +
+          (envS[r1 + x0] * (1 - tx) + envS[r1 + x1] * tx) * ty;
+
+        let gain = 250 / (cand < 12 ? 12 : cand);
+        if (gain > 2.6) gain = 2.6; else if (gain < 0.72) gain = 0.72;
+        gain = 1 + (gain - 1) * strength;
 
         const o = (row + x) * 4;
-        d[o] = clamp255(d[o] * g);
-        d[o + 1] = clamp255(d[o + 1] * g);
-        d[o + 2] = clamp255(d[o + 2] * g);
+        d[o] = clamp255(d[o] * gain);
+        d[o + 1] = clamp255(d[o + 1] * gain);
+        d[o + 2] = clamp255(d[o + 2] * gain);
       }
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 1b. 紙色偏中性化 ---------------- */
+
+  function whiteBalance(canvas, amount) {
+    if (amount <= 0) return;
+    const R = read(canvas);
+    const { d, n } = R;
+    const lum = lumOf(d, n);
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < n; i++) hist[lum[i] | 0]++;
+
+    let acc = 0, thr = 220;
+    for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= n * 0.08) { thr = v; break; } }
+
+    let sr = 0, sg = 0, sb = 0, c = 0;
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      if (lum[i] < thr) continue;
+      sr += d[p]; sg += d[p + 1]; sb += d[p + 2]; c++;
+    }
+    if (!c) return;
+    sr /= c; sg /= c; sb /= c;
+    const mx = Math.max(sr, sg, sb);
+    if (mx < 40) return;
+
+    let kr = 1 + (mx / Math.max(sr, 1) - 1) * amount;
+    let kg = 1 + (mx / Math.max(sg, 1) - 1) * amount;
+    let kb = 1 + (mx / Math.max(sb, 1) - 1) * amount;
+    kr = Math.min(1.35, Math.max(0.8, kr));
+    kg = Math.min(1.35, Math.max(0.8, kg));
+    kb = Math.min(1.35, Math.max(0.8, kb));
+
+    for (let p = 0; p < d.length; p += 4) {
+      d[p] = clamp255(d[p] * kr);
+      d[p + 1] = clamp255(d[p + 1] * kg);
+      d[p + 2] = clamp255(d[p + 2] * kb);
     }
     write(canvas, R.img);
   }
@@ -166,26 +219,30 @@
 
   /* ---------------- 4. 自動色階 ---------------- */
 
-  function autoLevels(canvas, loPct, hiPct) {
-    loPct = loPct == null ? 0.01 : loPct;
-    hiPct = hiPct == null ? 0.99 : hiPct;
+  function autoLevels(canvas, loFrac, hiFrac) {
+    loFrac = loFrac == null ? 0.02 : loFrac;
+    hiFrac = hiFrac == null ? 0.05 : hiFrac;
     const R = read(canvas);
     const { d, n } = R;
     const hist = new Uint32Array(256);
     for (let i = 0, p = 0; i < n; i++, p += 4) {
       hist[(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]) | 0]++;
     }
-    const loTarget = n * loPct, hiTarget = n * (1 - hiPct);
+
+    const loTarget = n * loFrac, hiTarget = n * hiFrac;
     let acc = 0, lo = 0, hi = 255;
     for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= loTarget) { lo = v; break; } }
     acc = 0;
     for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= hiTarget) { hi = v; break; } }
 
-    if (hi - lo < 30) { lo = Math.max(0, lo - 15); hi = Math.min(255, hi + 15); }
-    const scale = 255 / Math.max(20, hi - lo);
+    if (hi - lo < 40) { lo = Math.max(0, lo - 20); hi = Math.min(255, hi + 20); }
+    const scale = 255 / Math.max(25, hi - lo);
 
     const lut = new Uint8ClampedArray(256);
-    for (let v = 0; v < 256; v++) lut[v] = (v - lo) * scale;
+    for (let v = 0; v < 256; v++) {
+      const o = (v - lo) * scale;
+      lut[v] = o < 0 ? 0 : (o > 255 ? 255 : o);
+    }
 
     for (let i = 0, p = 0; i < n; i++, p += 4) {
       d[p] = lut[d[p]];
@@ -262,6 +319,37 @@
     write(canvas, R.img);
   }
 
+  /* ---------------- 6a. 亮部去色（讓紙張趨近中性白） ---------------- */
+
+  function neutralizeHighlights(canvas, knee, amount) {
+    const R = read(canvas);
+    const { d, n } = R;
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const l = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+      if (l <= knee) continue;
+      let f = (l - knee) / (255 - knee);
+      if (f > 1) f = 1;
+      const s = 1 - amount * f;
+      d[p] = clamp255(l + (d[p] - l) * s);
+      d[p + 1] = clamp255(l + (d[p + 1] - l) * s);
+      d[p + 2] = clamp255(l + (d[p + 2] - l) * s);
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 6b. 紙張白化（保留中間調的柔和曲線） ---------------- */
+
+  function whitenPaper(canvas, knee, full) {
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) {
+      if (v <= knee) { lut[v] = v; continue; }
+      if (v >= full) { lut[v] = 255; continue; }
+      const t = (v - knee) / (full - knee);
+      lut[v] = v + (255 - v) * (t * t * (3 - 2 * t));
+    }
+    applyLUT(canvas, function (v) { return lut[v]; });
+  }
+
   /* ---------------- 7. 銳化（unsharp mask） ---------------- */
 
   function unsharp(canvas, amount) {
@@ -303,24 +391,30 @@
     const shadow = Math.max(0, Math.min(100, s.shadow)) / 100;
     if (shadow > 0.005) removeShadow(c, shadow);
 
+    if (preset !== 'original') whiteBalance(c, preset === 'magic' ? 0.35 : 0.62);
+
     if (preset === 'bw') {
-      autoLevels(c, 0.02, 0.99);
+      autoLevels(c, 0.02, 0.05);
       adaptiveBinarize(c);
     } else if (preset === 'magic') {
-      autoLevels(c, 0.01, 0.995);
+      autoLevels(c, 0.004, 0.015);
       saturate(c, 1.42);
     } else if (preset === 'ink') {
-      autoLevels(c, 0.02, 0.99);
+      autoLevels(c, 0.02, 0.06);
       grayscale(c);
+      whitenPaper(c, 190, 240);
       applyLUT(c, function (v) { return 255 * Math.pow(v / 255, 0.82); });
     } else if (preset === 'gray') {
-      autoLevels(c, 0.015, 0.99);
+      autoLevels(c, 0.015, 0.05);
       grayscale(c);
+      whitenPaper(c, 195, 245);
     } else if (preset === 'original') {
       // 幾何校正後原樣輸出
     } else {
-      autoLevels(c, 0.01, 0.995);
-      saturate(c, 1.06);
+      autoLevels(c, 0.01, 0.05);
+      neutralizeHighlights(c, 185, 0.92);
+      whitenPaper(c, 200, 235);
+      saturate(c, 1.0);
     }
 
     const sharp = Math.max(0, Math.min(150, s.sharpen)) / 100;

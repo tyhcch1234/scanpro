@@ -3,3 +3,6 @@ Thumbs.db
 tests/out/
 *.log
 node_modules/
+
+# 使用者實拍測試照片（不進版控）
+tests/samples/user_*.jpg

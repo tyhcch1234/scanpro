@@ -165,6 +165,7 @@
 
     st = {
       page: { file: page.file, quad: quad, settings: s, strokes: [] },
+      autoDetected: page.autoDetected !== false,
       origQuad: quad.map(function (p) { return { x: p.x, y: p.y }; }),
       quad: quad.map(function (p) { return { x: p.x, y: p.y }; }),
       strokes: (page.strokes || []).map(function (k) {
@@ -380,6 +381,10 @@
       return;
     }
     const p = toNorm(e);
+    if (st.autoDetected === false) {
+      st.autoDetected = true;
+      el.hint.textContent = '拖曳四角調整紙張邊界';
+    }
     st.quad[st.drag] = { x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) };
     drawOverlay();
     e.preventDefault();
@@ -453,7 +458,9 @@
       renderResult();
     } else {
       el.toggle.textContent = '預覽效果';
-      el.hint.textContent = '拖曳四角調整紙張邊界';
+      el.hint.textContent = st.autoDetected === false
+        ? '自動偵測不確定，已套用預設版面 — 請拖曳四角對齊紙邊'
+        : '拖曳四角調整紙張邊界';
       el.overlay.style.cursor = '';
       if (st.brushOn) {
         st.brushOn = false;
@@ -520,16 +527,14 @@
     if (!st || !st.src) return;
     showLoading(true);
     setTimeout(function () {
-      const q = Pipeline.detect(st.src);
-      if (q) {
-        st.quad = q.map(function (p) { return { x: p.x, y: p.y }; });
-        st.page.quad = q.map(function (p) { return { x: p.x, y: p.y }; });
-        geometryChanged();
-        drawOverlay();
-        toast('已偵測紙張邊界');
-      } else {
-        toast('找不到明顯的紙張邊界，請手動拖曳四角');
-      }
+      const det = Pipeline.detect(st.src);
+      const q = det.quad;
+      st.quad = q.map(function (p) { return { x: p.x, y: p.y }; });
+      st.page.quad = st.quad.map(function (p) { return { x: p.x, y: p.y }; });
+      st.autoDetected = det.auto;
+      geometryChanged();
+      drawOverlay();
+      toast(det.auto ? '已偵測紙張邊界' : '邊界不明顯，已套用預設版面，請確認四角');
       showLoading(false);
     }, 30);
   }

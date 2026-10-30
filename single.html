@@ -362,6 +362,7 @@ body {
 .stage-toggle:hover { border-color: var(--accent); color: #fff; }
 
 .ed-loading {
+  pointer-events: none;
   position: absolute; inset: 0;
   background: rgba(7, 10, 14, .74);
   backdrop-filter: blur(3px);
@@ -702,7 +703,7 @@ input[type="range"]::-moz-range-thumb {
         <p class="dz-hint">也可以把相片拖到這裡，或按 <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>V</kbd> 貼上</p>
 
         <ul class="dz-feats">
-          <li><b>邊緣偵測</b><span>Sobel 梯度 + 連通域找紙張四角</span></li>
+          <li><b>邊緣偵測</b><span>多候選評分：梯度、內部亮度、版面比例</span></li>
           <li><b>透視校正</b><span>單應性矩陣重採樣，梯形還原成矩形</span></li>
           <li><b>去陰影</b><span>低頻背景除法正規化，光線變均勻</span></li>
           <li><b>多種濾鏡</b><span>黑白高對比、增強銳化、魔幻彩色、省墨</span></li>
@@ -896,7 +897,8 @@ input[type="range"]::-moz-range-thumb {
 
       <h3>完整實作的電腦視覺</h3>
       <ul>
-        <li><b>自動邊緣偵測</b>：灰階 → 高斯模糊 → Sobel 梯度 → 自適應門檻二值化 → 3×3 膨脹 → 連通域分析，取最大輪廓後用 <code>min/max(x+y)</code>、<code>min/max(x−y)</code> 求四個極值角點；多組門檻各跑一次，取面積最大且通過凸性／面積／邊長檢查的候選。</li>
+        <li><b>自動邊緣偵測</b>：灰階 → 高斯模糊 → Sobel 梯度 → 多組自適應門檻 → 3×3 膨脹 → 取前 4 大連通域，各自用 <code>min/max(x+y)</code>、<code>min/max(x−y)</code> 求極值四角，得到多個候選；再逐一評分（四邊梯度支持度、內部亮度、面積、版面比例），最後對勝出的候選做「邊緣吸附 + 直線擬合」精修。</li>
+        <li><b>低對比時的處理</b>：若沒有任何候選通過評分門檻（例如白紙放在白桌上、邊界幾乎看不出來），不會亂裁，而是套用符合紙張比例的置中框並在編輯器提示手動確認，避免把內容裁掉。</li>
         <li><b>透視校正</b>：由四組對應點解 8 參數單應性矩陣（高斯消去法），對每個輸出像素做逆映射 + 雙線性取樣，梯形自動還原成正面矩形。</li>
         <li><b>智慧去陰影</b>：取亮度低頻背景（降採樣 → 大核 box blur → 雙線性升採樣），再以 <code>輸出 = 原像素 × 目標白 / 背景亮度</code> 做除法正規化，同時保留色相。這是文件掃描的經典做法，對側光、手影、燈泡暗角都有效。</li>
         <li><b>黑白高對比</b>：局部自適應二值化（半徑隨解析度縮放），再去除孤立雜點，把透印字跡、紙張紋理一併濾掉。</li>
@@ -1127,10 +1129,11 @@ input[type="range"]::-moz-range-thumb {
     return out;
   }
 
-  function largestComponent(mask, w, h) {
+  /** 取出前 k 大的連通域（依外接框面積） */
+  function topComponents(mask, w, h, k) {
     const label = new Uint8Array(w * h);
     const stack = new Int32Array(w * h);
-    let best = null;
+    const comps = [];
 
     for (let start = 0; start < mask.length; start++) {
       if (!mask[start] || label[start]) continue;
@@ -1155,33 +1158,115 @@ input[type="range"]::-moz-range-thumb {
         if (y < h - 1 && mask[p + w] && !label[p + w]) { label[p + w] = 1; stack[sp++] = p + w; }
       }
 
-      const bboxArea = (comp.maxX - comp.minX + 1) * (comp.maxY - comp.minY + 1);
-      comp.bboxArea = bboxArea;
-      if (!best || bboxArea > best.bboxArea ||
-          (bboxArea === best.bboxArea && comp.count > best.count)) {
-        best = comp;
-      }
+      comp.bboxArea = (comp.maxX - comp.minX + 1) * (comp.maxY - comp.minY + 1);
+      comps.push(comp);
     }
-    return best;
+
+    comps.sort(function (a, b) { return b.bboxArea - a.bboxArea; });
+    return comps.slice(0, k);
   }
 
-  /** 從遮罩的最大連通域抓四個極值角點 */
+  /** 從連通域的極值點抓四個角 */
   function quadFromComponent(comp, w, h) {
     if (!comp || comp.px.length < 40) return null;
     const pts = [];
-    const step = Math.max(1, Math.floor(comp.px.length / 6000));
+    const step = Math.max(1, Math.floor(comp.px.length / 8000));
     for (let i = 0; i < comp.px.length; i += step) {
       const p = comp.px[i];
       pts.push({ x: p % w, y: (p - (p % w)) / w });
     }
     const q = CV.orderQuad(pts);
-    // 去重：四個角必須明顯不同
     for (let i = 0; i < 4; i++) {
       for (let j = i + 1; j < 4; j++) {
         if (CV.dist(q[i], q[j]) < Math.min(w, h) * 0.08) return null;
       }
     }
     return q;
+  }
+
+  function pointInQuad(x, y, q) {
+    let inside = false;
+    for (let i = 0, j = 3; i < 4; j = i++) {
+      const xi = q[i].x, yi = q[i].y, xj = q[j].x, yj = q[j].y;
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  function percentileOf(arr, p) {
+    const hist = new Uint32Array(512);
+    let n = 0;
+    for (let i = 0; i < arr.length; i++) {
+      let v = arr[i] | 0;
+      if (v < 0) v = 0; else if (v > 511) v = 511;
+      hist[v]++; n++;
+    }
+    const target = n * p;
+    let acc = 0;
+    for (let v = 0; v < 512; v++) { acc += hist[v]; if (acc >= target) return v; }
+    return 511;
+  }
+
+  /**
+   * 評估一個四邊形「像不像一張紙」：
+   * 四邊是否都貼在真實邊緣上、內部是否比外部亮、面積是否合理
+   */
+  function scoreQuad(gray, mag, q, w, h, ref) {
+    if (!ref) ref = percentileOf(mag, 0.95) || 1;
+    const sup = [];
+
+    for (let e = 0; e < 4; e++) {
+      const a = q[e], b = q[(e + 1) % 4];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const L = Math.sqrt(dx * dx + dy * dy);
+      if (L < Math.min(w, h) * 0.15) return -1;
+      const nx = -dy / L, ny = dx / L;
+      let acc = 0, cnt = 0;
+      for (let k = 1; k <= 15; k++) {
+        const t = 0.06 + 0.88 * k / 16;
+        const px = a.x + dx * t, py = a.y + dy * t;
+        let m = 0;
+        for (let d = -2; d <= 2; d++) {
+          const v = sampleBilinear(mag, w, h, px + nx * d, py + ny * d);
+          if (v > m) m = v;
+        }
+        acc += m; cnt++;
+      }
+      sup.push(Math.min(1, (acc / cnt) / ref));
+    }
+
+    const sMean = (sup[0] + sup[1] + sup[2] + sup[3]) / 4;
+    const sMin = Math.min(sup[0], Math.min(sup[1], Math.min(sup[2], sup[3])));
+
+    let sum = 0, c = 0;
+    for (let gy = 0; gy < 9; gy++) {
+      for (let gx = 0; gx < 9; gx++) {
+        const px = (gx + 0.5) / 9 * w, py = (gy + 0.5) / 9 * h;
+        if (pointInQuad(px, py, q)) { sum += sampleBilinear(gray, w, h, px, py); c++; }
+      }
+    }
+    const inside = c ? (sum / c) / 255 : 0;
+
+    const areaFrac = Math.abs(CV.quadArea(q)) / (w * h);
+
+    let touch = 0;
+    for (let i = 0; i < 4; i++) {
+      const p = q[i];
+      if (p.x < w * 0.012 || p.y < h * 0.012 || p.x > w * 0.988 || p.y > h * 0.988) touch++;
+    }
+    const penalty = 1 - 0.1 * touch;
+
+    // 版面比例先驗：文件幾乎不是正方形
+    const wTop = CV.dist(q[0], q[1]), wBot = CV.dist(q[3], q[2]);
+    const hL = CV.dist(q[0], q[3]), hR = CV.dist(q[1], q[2]);
+    let ratio = ((wTop + wBot) / 2) / Math.max(1, (hL + hR) / 2);
+    if (ratio > 1) ratio = 1 / ratio;
+    let arPenalty = 1;
+    if (ratio > 0.86) arPenalty = 0.74;
+    else if (ratio < 0.44) arPenalty = 0.86;
+
+    return (0.55 * (0.5 * sMean + 0.5 * sMin) + 0.25 * inside +
+      0.20 * Math.min(1, areaFrac / 0.72)) * penalty * arPenalty;
   }
 
   /**
@@ -1198,7 +1283,6 @@ input[type="range"]::-moz-range-thumb {
     const blurred = CV.blurGauss(gray.g, w, h, 1);
     const mag = CV.sobel(blurred, w, h);
 
-    // 梯度統計
     let sum = 0, sum2 = 0, n = 0;
     for (let i = 0; i < mag.length; i++) {
       const v = mag[i];
@@ -1209,29 +1293,47 @@ input[type="range"]::-moz-range-thumb {
     const mean = sum / n;
     const std = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
 
-    const factors = [0.9, 1.4, 2.0, 2.9];
-    let best = null, bestArea = 0;
-
-    for (const f of factors) {
-      const th = Math.max(mean + f * std, 18);
+    const cands = [];
+    const factors = [0.8, 1.3, 1.9, 2.6];
+    for (let fi = 0; fi < factors.length; fi++) {
+      const th = Math.max(mean + factors[fi] * std, 14);
       const mask = new Uint8Array(w * h);
       for (let i = 0; i < mask.length; i++) mask[i] = mag[i] > th ? 1 : 0;
-
       const d = dilate(mask, w, h);
-      const comp = largestComponent(d, w, h);
-      if (!comp) continue;
-      const q = quadFromComponent(comp, w, h);
-      if (!q) continue;
-      if (!CV.validQuad(q, w, h)) continue;
+      const comps = topComponents(d, w, h, 4);
+      for (let ci = 0; ci < comps.length; ci++) {
+        const q = quadFromComponent(comps[ci], w, h);
+        if (q && CV.validQuad(q, w, h)) cands.push(q);
+      }
+    }
 
-      const area = CV.quadArea(q);
-      if (area > bestArea) { bestArea = area; best = q; }
+    // 整幅影像也是候選（避免完全偵測失敗時亂裁）
+    cands.push([{ x: 0, y: 0 }, { x: w - 1, y: 0 }, { x: w - 1, y: h - 1 }, { x: 0, y: h - 1 }]);
+
+    let best = null, bestScore = 0.33;
+    const refMag = percentileOf(mag, 0.95) || 1;
+    const seen = [];
+    for (let i = 0; i < cands.length; i++) {
+      const q = cands[i];
+      // 去重
+      let dup = false;
+      for (let j = 0; j < seen.length; j++) {
+        let d = 0;
+        for (let k = 0; k < 4; k++) d += CV.dist(q[k], seen[j][k]);
+        if (d / 4 < Math.min(w, h) * 0.03) { dup = true; break; }
+      }
+      if (dup) continue;
+      seen.push(q);
+
+      const sc = scoreQuad(blurred, mag, q, w, h, refMag);
+      if (sc > bestScore) { bestScore = sc; best = q; }
     }
 
     if (!best) return null;
-    return best.map(function (p) {
+    const norm = best.map(function (p) {
       return { x: p.x / w, y: p.y / h };
     });
+    return norm;
   };
 
   /* ---------------- 邊緣精修（吸附到最強梯度） ---------------- */
@@ -1258,7 +1360,7 @@ input[type="range"]::-moz-range-thumb {
    * 把偵測到的四邊各自吸附到最強梯度，再以擬合直線求交點
    * 可同時修正邊的位移與角度誤差
    */
-  CV.refineQuad = function (canvas, quadNorm) {
+  CV.refineQuad = function (canvas, quadNorm, radiusFrac) {
     const work = Math.max(canvas.width, canvas.height) > 1200 ? CV.drawTo(canvas, 1200) : canvas;
     const W = work.width, H = work.height;
     const g = CV.gray(work);
@@ -1266,7 +1368,7 @@ input[type="range"]::-moz-range-thumb {
     const mag = CV.sobel(blurred, W, H);
 
     const q = quadNorm.map(function (p) { return { x: p.x * W, y: p.y * H }; });
-    const R = Math.max(6, Math.round(Math.min(W, H) * 0.022));
+    const R = Math.max(6, Math.round(Math.min(W, H) * (radiusFrac || 0.022)));
     const lines = [];
 
     for (let e = 0; e < 4; e++) {
@@ -1799,6 +1901,8 @@ input[type="range"]::-moz-range-thumb {
     return mask;
   };
 
+  CV.__debug = { dilate: dilate, topComponents: topComponents, quadFromComponent: quadFromComponent, scoreQuad: scoreQuad, percentileOf: percentileOf };
+
   global.CV = CV;
 })(window);
 
@@ -1854,50 +1958,103 @@ input[type="range"]::-moz-range-thumb {
     return lum;
   }
 
-  /* ---------------- 1. 智慧去陰影（背景除法正規化） ---------------- */
+  /* ---------------- 1. 智慧去陰影（紙張亮度包絡除法） ----------------
+   * 以「區塊百分位」估計紙張本身的亮度（不受文字、格線拖低），
+   * 再做大尺度平滑，避免在文字周圍產生光暈與斑塊。
+   * ------------------------------------------------------------------ */
 
   function removeShadow(canvas, strength) {
     const R = read(canvas);
-    const { d, w, h, n } = R;
-    const lum = lumOf(d, n);
+    const { d, w, h } = R;
+    const lum = lumOf(d, R.n);
 
-    // 降採樣取低頻背景
-    const ds = 4;
-    const sw = Math.ceil(w / ds), sh = Math.ceil(h / ds);
-    const small = new Float32Array(sw * sh);
-    const cnt = new Float32Array(sw * sh);
-    for (let y = 0; y < h; y++) {
-      const row = ((y / ds) | 0) * sw, src = y * w;
-      for (let x = 0; x < w; x++) {
-        const si = row + ((x / ds) | 0);
-        small[si] += lum[src + x];
-        cnt[si] += 1;
+    const BS = Math.max(6, Math.round(Math.min(w, h) / 32));
+    const bw = Math.ceil(w / BS), bh = Math.ceil(h / BS);
+    const env = new Float32Array(bw * bh);
+    const hist = new Uint32Array(256);
+    const step = BS > 26 ? 2 : 1;
+
+    for (let by = 0; by < bh; by++) {
+      const y0 = by * BS, y1 = Math.min(h, y0 + BS);
+      for (let bx = 0; bx < bw; bx++) {
+        const x0 = bx * BS, x1 = Math.min(w, x0 + BS);
+        hist.fill(0);
+        let total = 0;
+        for (let y = y0; y < y1; y += step) {
+          const row = y * w;
+          for (let x = x0; x < x1; x += step) {
+            hist[lum[row + x] | 0]++;
+            total++;
+          }
+        }
+        const target = total * 0.82;
+        let acc = 0, v = 0;
+        for (; v < 256; v++) { acc += hist[v]; if (acc >= target) break; }
+        env[by * bw + bx] = v > 255 ? 255 : v;
       }
     }
-    for (let i = 0; i < small.length; i++) small[i] = cnt[i] ? small[i] / cnt[i] : 255;
 
-    const r = Math.max(2, Math.round(Math.min(sw, sh) / 7));
-    const bg = CV.blurGauss(small, sw, sh, r);
+    // 兩次 3x3 平滑，消掉區塊接縫
+    const envS = CV.boxBlurF(CV.boxBlurF(env, bw, bh, 1), bw, bh, 1);
+    const fx = bw / w, fy = bh / h;
 
     for (let y = 0; y < h; y++) {
-      const fy = Math.min(sh - 1.001, Math.max(0, y / ds));
-      const y0 = fy | 0, y1 = Math.min(sh - 1, y0 + 1), ty = fy - y0;
-      const r0 = y0 * sw, r1 = y1 * sw;
-      const row = y * w;
+      const gy = Math.min(bh - 1.001, Math.max(0, (y + 0.5) * fy - 0.5));
+      const y0 = gy | 0, y1 = Math.min(bh - 1, y0 + 1), ty = gy - y0;
+      const r0 = y0 * bw, r1 = y1 * bw, row = y * w;
       for (let x = 0; x < w; x++) {
-        const fx = Math.min(sw - 1.001, Math.max(0, x / ds));
-        const x0 = fx | 0, x1 = Math.min(sw - 1, x0 + 1), tx = fx - x0;
-        const b = (bg[r0 + x0] * (1 - tx) + bg[r0 + x1] * tx) * (1 - ty) +
-          (bg[r1 + x0] * (1 - tx) + bg[r1 + x1] * tx) * ty;
-        let g = 246 / (b < 18 ? 18 : b);
-        if (g > 3.4) g = 3.4; else if (g < 0.5) g = 0.5;
-        g = 1 + (g - 1) * strength;
+        const gx = Math.min(bw - 1.001, Math.max(0, (x + 0.5) * fx - 0.5));
+        const x0 = gx | 0, x1 = Math.min(bw - 1, x0 + 1), tx = gx - x0;
+        const cand = (envS[r0 + x0] * (1 - tx) + envS[r0 + x1] * tx) * (1 - ty) +
+          (envS[r1 + x0] * (1 - tx) + envS[r1 + x1] * tx) * ty;
+
+        let gain = 250 / (cand < 12 ? 12 : cand);
+        if (gain > 2.6) gain = 2.6; else if (gain < 0.72) gain = 0.72;
+        gain = 1 + (gain - 1) * strength;
 
         const o = (row + x) * 4;
-        d[o] = clamp255(d[o] * g);
-        d[o + 1] = clamp255(d[o + 1] * g);
-        d[o + 2] = clamp255(d[o + 2] * g);
+        d[o] = clamp255(d[o] * gain);
+        d[o + 1] = clamp255(d[o + 1] * gain);
+        d[o + 2] = clamp255(d[o + 2] * gain);
       }
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 1b. 紙色偏中性化 ---------------- */
+
+  function whiteBalance(canvas, amount) {
+    if (amount <= 0) return;
+    const R = read(canvas);
+    const { d, n } = R;
+    const lum = lumOf(d, n);
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < n; i++) hist[lum[i] | 0]++;
+
+    let acc = 0, thr = 220;
+    for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= n * 0.08) { thr = v; break; } }
+
+    let sr = 0, sg = 0, sb = 0, c = 0;
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      if (lum[i] < thr) continue;
+      sr += d[p]; sg += d[p + 1]; sb += d[p + 2]; c++;
+    }
+    if (!c) return;
+    sr /= c; sg /= c; sb /= c;
+    const mx = Math.max(sr, sg, sb);
+    if (mx < 40) return;
+
+    let kr = 1 + (mx / Math.max(sr, 1) - 1) * amount;
+    let kg = 1 + (mx / Math.max(sg, 1) - 1) * amount;
+    let kb = 1 + (mx / Math.max(sb, 1) - 1) * amount;
+    kr = Math.min(1.35, Math.max(0.8, kr));
+    kg = Math.min(1.35, Math.max(0.8, kg));
+    kb = Math.min(1.35, Math.max(0.8, kb));
+
+    for (let p = 0; p < d.length; p += 4) {
+      d[p] = clamp255(d[p] * kr);
+      d[p + 1] = clamp255(d[p + 1] * kg);
+      d[p + 2] = clamp255(d[p + 2] * kb);
     }
     write(canvas, R.img);
   }
@@ -1972,26 +2129,30 @@ input[type="range"]::-moz-range-thumb {
 
   /* ---------------- 4. 自動色階 ---------------- */
 
-  function autoLevels(canvas, loPct, hiPct) {
-    loPct = loPct == null ? 0.01 : loPct;
-    hiPct = hiPct == null ? 0.99 : hiPct;
+  function autoLevels(canvas, loFrac, hiFrac) {
+    loFrac = loFrac == null ? 0.02 : loFrac;
+    hiFrac = hiFrac == null ? 0.05 : hiFrac;
     const R = read(canvas);
     const { d, n } = R;
     const hist = new Uint32Array(256);
     for (let i = 0, p = 0; i < n; i++, p += 4) {
       hist[(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]) | 0]++;
     }
-    const loTarget = n * loPct, hiTarget = n * (1 - hiPct);
+
+    const loTarget = n * loFrac, hiTarget = n * hiFrac;
     let acc = 0, lo = 0, hi = 255;
     for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= loTarget) { lo = v; break; } }
     acc = 0;
     for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= hiTarget) { hi = v; break; } }
 
-    if (hi - lo < 30) { lo = Math.max(0, lo - 15); hi = Math.min(255, hi + 15); }
-    const scale = 255 / Math.max(20, hi - lo);
+    if (hi - lo < 40) { lo = Math.max(0, lo - 20); hi = Math.min(255, hi + 20); }
+    const scale = 255 / Math.max(25, hi - lo);
 
     const lut = new Uint8ClampedArray(256);
-    for (let v = 0; v < 256; v++) lut[v] = (v - lo) * scale;
+    for (let v = 0; v < 256; v++) {
+      const o = (v - lo) * scale;
+      lut[v] = o < 0 ? 0 : (o > 255 ? 255 : o);
+    }
 
     for (let i = 0, p = 0; i < n; i++, p += 4) {
       d[p] = lut[d[p]];
@@ -2068,6 +2229,37 @@ input[type="range"]::-moz-range-thumb {
     write(canvas, R.img);
   }
 
+  /* ---------------- 6a. 亮部去色（讓紙張趨近中性白） ---------------- */
+
+  function neutralizeHighlights(canvas, knee, amount) {
+    const R = read(canvas);
+    const { d, n } = R;
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const l = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+      if (l <= knee) continue;
+      let f = (l - knee) / (255 - knee);
+      if (f > 1) f = 1;
+      const s = 1 - amount * f;
+      d[p] = clamp255(l + (d[p] - l) * s);
+      d[p + 1] = clamp255(l + (d[p + 1] - l) * s);
+      d[p + 2] = clamp255(l + (d[p + 2] - l) * s);
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 6b. 紙張白化（保留中間調的柔和曲線） ---------------- */
+
+  function whitenPaper(canvas, knee, full) {
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) {
+      if (v <= knee) { lut[v] = v; continue; }
+      if (v >= full) { lut[v] = 255; continue; }
+      const t = (v - knee) / (full - knee);
+      lut[v] = v + (255 - v) * (t * t * (3 - 2 * t));
+    }
+    applyLUT(canvas, function (v) { return lut[v]; });
+  }
+
   /* ---------------- 7. 銳化（unsharp mask） ---------------- */
 
   function unsharp(canvas, amount) {
@@ -2109,24 +2301,30 @@ input[type="range"]::-moz-range-thumb {
     const shadow = Math.max(0, Math.min(100, s.shadow)) / 100;
     if (shadow > 0.005) removeShadow(c, shadow);
 
+    if (preset !== 'original') whiteBalance(c, preset === 'magic' ? 0.35 : 0.62);
+
     if (preset === 'bw') {
-      autoLevels(c, 0.02, 0.99);
+      autoLevels(c, 0.02, 0.05);
       adaptiveBinarize(c);
     } else if (preset === 'magic') {
-      autoLevels(c, 0.01, 0.995);
+      autoLevels(c, 0.004, 0.015);
       saturate(c, 1.42);
     } else if (preset === 'ink') {
-      autoLevels(c, 0.02, 0.99);
+      autoLevels(c, 0.02, 0.06);
       grayscale(c);
+      whitenPaper(c, 190, 240);
       applyLUT(c, function (v) { return 255 * Math.pow(v / 255, 0.82); });
     } else if (preset === 'gray') {
-      autoLevels(c, 0.015, 0.99);
+      autoLevels(c, 0.015, 0.05);
       grayscale(c);
+      whitenPaper(c, 195, 245);
     } else if (preset === 'original') {
       // 幾何校正後原樣輸出
     } else {
-      autoLevels(c, 0.01, 0.995);
-      saturate(c, 1.06);
+      autoLevels(c, 0.01, 0.05);
+      neutralizeHighlights(c, 185, 0.92);
+      whitenPaper(c, 200, 235);
+      saturate(c, 1.0);
     }
 
     const sharp = Math.max(0, Math.min(150, s.sharpen)) / 100;
@@ -2214,12 +2412,34 @@ input[type="range"]::-moz-range-thumb {
   /** 偵測邊界，回傳正規化四角（失敗回傳 null） */
   Pipeline.detect = function (srcCanvas) {
     const coarse = CV.detectQuad(srcCanvas);
-    if (!coarse) return null;
-    try {
-      return CV.refineQuad(srcCanvas, coarse);
-    } catch (e) {
-      return coarse;
+    if (coarse) {
+      try {
+        return { quad: CV.refineQuad(srcCanvas, coarse), auto: true };
+      } catch (e) {
+        return { quad: coarse, auto: true };
+      }
     }
+    // 偵測不確定：改用符合版面比例的置中框，並用較大搜尋半徑吸附邊緣
+    const dq = Pipeline.defaultQuad(srcCanvas.width, srcCanvas.height);
+    try {
+      return { quad: CV.refineQuad(srcCanvas, dq, 0.05), auto: false };
+    } catch (e) {
+      return { quad: dq, auto: false };
+    }
+  };
+
+  /** 依影像方向給出符合常見紙張比例的置中框 */
+  Pipeline.defaultQuad = function (w, h) {
+    const ar = h >= w ? 0.707 : 1.414;   // 寬 / 高
+    let bw = w * 0.92, bh = bw / ar;
+    if (bh > h * 0.92) { bh = h * 0.92; bw = bh * ar; }
+    const x0 = (w - bw) / 2, y0 = (h - bh) / 2;
+    return [
+      { x: x0 / w, y: y0 / h },
+      { x: (x0 + bw) / w, y: y0 / h },
+      { x: (x0 + bw) / w, y: (y0 + bh) / h },
+      { x: x0 / w, y: (y0 + bh) / h }
+    ];
   };
 
   /**
@@ -2566,6 +2786,7 @@ input[type="range"]::-moz-range-thumb {
 
     st = {
       page: { file: page.file, quad: quad, settings: s, strokes: [] },
+      autoDetected: page.autoDetected !== false,
       origQuad: quad.map(function (p) { return { x: p.x, y: p.y }; }),
       quad: quad.map(function (p) { return { x: p.x, y: p.y }; }),
       strokes: (page.strokes || []).map(function (k) {
@@ -2781,6 +3002,10 @@ input[type="range"]::-moz-range-thumb {
       return;
     }
     const p = toNorm(e);
+    if (st.autoDetected === false) {
+      st.autoDetected = true;
+      el.hint.textContent = '拖曳四角調整紙張邊界';
+    }
     st.quad[st.drag] = { x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) };
     drawOverlay();
     e.preventDefault();
@@ -2854,7 +3079,9 @@ input[type="range"]::-moz-range-thumb {
       renderResult();
     } else {
       el.toggle.textContent = '預覽效果';
-      el.hint.textContent = '拖曳四角調整紙張邊界';
+      el.hint.textContent = st.autoDetected === false
+        ? '自動偵測不確定，已套用預設版面 — 請拖曳四角對齊紙邊'
+        : '拖曳四角調整紙張邊界';
       el.overlay.style.cursor = '';
       if (st.brushOn) {
         st.brushOn = false;
@@ -2921,16 +3148,14 @@ input[type="range"]::-moz-range-thumb {
     if (!st || !st.src) return;
     showLoading(true);
     setTimeout(function () {
-      const q = Pipeline.detect(st.src);
-      if (q) {
-        st.quad = q.map(function (p) { return { x: p.x, y: p.y }; });
-        st.page.quad = q.map(function (p) { return { x: p.x, y: p.y }; });
-        geometryChanged();
-        drawOverlay();
-        toast('已偵測紙張邊界');
-      } else {
-        toast('找不到明顯的紙張邊界，請手動拖曳四角');
-      }
+      const det = Pipeline.detect(st.src);
+      const q = det.quad;
+      st.quad = q.map(function (p) { return { x: p.x, y: p.y }; });
+      st.page.quad = st.quad.map(function (p) { return { x: p.x, y: p.y }; });
+      st.autoDetected = det.auto;
+      geometryChanged();
+      drawOverlay();
+      toast(det.auto ? '已偵測紙張邊界' : '邊界不明顯，已套用預設版面，請確認四角');
       showLoading(false);
     }, 30);
   }
@@ -3057,8 +3282,9 @@ input[type="range"]::-moz-range-thumb {
         page.srcW = src.width;
         page.srcH = src.height;
 
-        const q = Pipeline.detect(src);
-        if (q) page.quad = q;
+        const det = Pipeline.detect(src);
+        page.quad = det.quad;
+        page.autoDetected = det.auto;
 
         const out = Pipeline.render(src, page, Pipeline.THUMB_DIM);
         page.thumb = Pipeline.thumb(out, Pipeline.THUMB_DIM);
