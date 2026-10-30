@@ -1,0 +1,3464 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ScanPro · 相片轉 PDF 掃描</title>
+<style>
+:root {
+  --bg: #0a0e13;
+  --bg-2: #0e131a;
+  --surface: #141b24;
+  --surface-2: #1a2330;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-2: rgba(255, 255, 255, 0.16);
+  --text: #e9eef6;
+  --muted: #8d9bad;
+  --accent: #3d8bff;
+  --accent-2: #22d3ee;
+  --danger: #ff6b6b;
+  --radius: 14px;
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1000px 600px at 12% -10%, rgba(61, 139, 255, 0.14), transparent 60%),
+    radial-gradient(800px 500px at 100% 0%, rgba(34, 211, 238, 0.10), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+    "Noto Sans TC", "Microsoft JhengHei", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.hidden { display: none !important; }
+.muted { color: var(--muted); font-weight: 400; }
+
+/* ---------- topbar ---------- */
+.topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(10, 14, 19, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  z-index: 20;
+}
+
+.brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+
+.logo {
+  width: 38px; height: 38px;
+  border-radius: 11px;
+  display: grid; place-items: center;
+  color: #fff;
+  background: linear-gradient(140deg, var(--accent), var(--accent-2));
+  box-shadow: 0 6px 18px rgba(61, 139, 255, 0.3);
+  flex: 0 0 auto;
+}
+
+.brand-name { font-size: 16px; font-weight: 700; letter-spacing: .2px; line-height: 1.2; }
+.brand-sub { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+
+.top-actions { display: flex; align-items: center; gap: 8px; }
+
+/* ---------- buttons ---------- */
+.btn {
+  appearance: none;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 15px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+  transition: background .16s, border-color .16s, transform .12s, opacity .16s;
+}
+.btn:hover { background: #222e3e; border-color: rgba(255,255,255,.24); }
+.btn:active { transform: scale(.97); }
+.btn.ghost { background: transparent; border-color: var(--line); color: #c7d3e2; }
+.btn.ghost:hover { background: rgba(255,255,255,.05); color: #fff; }
+.btn.primary {
+  background: linear-gradient(135deg, var(--accent), #2f6fe0);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(61, 139, 255, .28);
+}
+.btn.primary:hover { background: linear-gradient(135deg, #4f97ff, #3a7cf0); }
+.btn.lg { padding: 12px 22px; font-size: 14px; border-radius: 12px; }
+.btn.sm { padding: 7px 11px; font-size: 12.5px; border-radius: 9px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.icon-btn {
+  border: none; background: transparent; color: var(--muted);
+  font-size: 16px; cursor: pointer; width: 30px; height: 30px;
+  border-radius: 8px; display: grid; place-items: center;
+}
+.icon-btn:hover { background: rgba(255,255,255,.07); color: #fff; }
+
+/* ---------- main ---------- */
+.main { flex: 1 1 auto; overflow: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+
+/* ---------- empty state ---------- */
+.empty {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px 60px;
+}
+
+.dz {
+  width: min(760px, 100%);
+  border: 1.5px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  padding: 44px 32px 36px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(20, 27, 36, .7), rgba(14, 19, 26, .4));
+  transition: border-color .2s, background .2s, transform .2s;
+}
+.dz.dragover { border-color: var(--accent); background: rgba(61, 139, 255, .08); transform: scale(1.005); }
+
+.dz-icon {
+  width: 66px; height: 66px; margin: 0 auto 18px;
+  border-radius: 20px;
+  display: grid; place-items: center;
+  color: #cfe0ff;
+  background: linear-gradient(150deg, rgba(61,139,255,.22), rgba(34,211,238,.12));
+  border: 1px solid rgba(61, 139, 255, .28);
+}
+
+.dz h1 { font-size: 26px; margin: 0 0 10px; letter-spacing: -.4px; font-weight: 700; }
+.dz-desc { color: var(--muted); max-width: 480px; margin: 0 auto 26px; font-size: 14px; }
+
+.dz-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.dz-hint { color: #6f7f93; font-size: 12.5px; margin: 20px 0 0; }
+.dz-hint kbd {
+  background: rgba(255,255,255,.08); border: 1px solid var(--line-2);
+  border-radius: 5px; padding: 1px 5px; font-size: 11px; font-family: inherit;
+}
+
+.dz-feats {
+  list-style: none; padding: 0; margin: 30px 0 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px; text-align: left;
+}
+.dz-feats li {
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 11px 13px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.dz-feats b { font-size: 12.5px; color: #dbe6f5; }
+.dz-feats span { font-size: 11.5px; color: var(--muted); }
+
+/* ---------- pages ---------- */
+.pages-area { padding: 18px 20px 90px; }
+
+.pages-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.pages-title { font-size: 15px; font-weight: 700; }
+.pages-title .muted { font-size: 12.5px; margin-left: 8px; font-weight: 400; }
+.pages-tools { display: flex; gap: 8px; }
+
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  position: relative;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color .16s, transform .16s;
+  animation: pop .22s ease both;
+}
+@keyframes pop { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+.card:hover { border-color: rgba(61, 139, 255, .5); transform: translateY(-2px); }
+
+.card-img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background: #f4f4f4 center/contain no-repeat;
+  display: block;
+}
+.card-img.placeholder {
+  background: repeating-linear-gradient(45deg, #1a2330, #1a2330 8px, #16202b 8px, #16202b 16px);
+  animation: shimmer 1.2s linear infinite;
+}
+@keyframes shimmer { to { background-position: 24px 24px } }
+
+.card-num {
+  position: absolute; top: 8px; left: 8px;
+  min-width: 24px; height: 24px; padding: 0 7px;
+  border-radius: 8px;
+  background: rgba(8, 12, 18, .8);
+  backdrop-filter: blur(6px);
+  font-size: 12px; font-weight: 700;
+  display: grid; place-items: center;
+  color: #dce8f8;
+  border: 1px solid rgba(255,255,255,.12);
+}
+
+.card-ops {
+  position: absolute; left: 6px; right: 6px; bottom: 6px;
+  display: flex; gap: 4px;
+  opacity: 0; transform: translateY(4px);
+  transition: opacity .16s, transform .16s;
+}
+.card:hover .card-ops, .card:focus-within .card-ops { opacity: 1; transform: none; }
+@media (hover: none) { .card-ops { opacity: 1; transform: none; } }
+
+.op {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 27px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(8, 12, 18, .78);
+  backdrop-filter: blur(6px);
+  color: #dbe6f4; font-size: 13px;
+  display: grid; place-items: center; cursor: pointer;
+  transition: background .14s, color .14s;
+}
+.op:hover { background: rgba(61, 139, 255, .85); color: #fff; }
+.op.del:hover { background: rgba(255, 107, 107, .9); }
+
+.add-tile {
+  border: 1.5px dashed rgba(255,255,255,.16);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,.02);
+  color: var(--muted);
+  font: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  aspect-ratio: 3 / 4;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  transition: border-color .16s, color .16s, background .16s;
+  animation: pop .22s ease both;
+}
+.add-tile span { font-size: 26px; font-weight: 300; line-height: 1; }
+.add-tile:hover { border-color: var(--accent); color: #cfe0ff; background: rgba(61,139,255,.06); }
+
+/* ---------- mobile bottom bar ---------- */
+.mobile-bar {
+  display: none;
+  flex: 0 0 auto;
+  gap: 10px;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: rgba(10, 14, 19, .92);
+  backdrop-filter: blur(14px);
+}
+.mobile-bar .btn { flex: 1; padding: 12px; }
+
+/* ---------- editor ---------- */
+.editor {
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  animation: fade .18s ease both;
+}
+@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+
+.ed-head {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  gap: 10px;
+}
+.ed-title { font-size: 13.5px; font-weight: 600; color: #c6d4e6; }
+
+.ed-body { flex: 1 1 auto; display: flex; min-height: 0; }
+
+.ed-stage {
+  flex: 1 1 auto;
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  min-width: 0;
+  min-height: 0;
+  background:
+    radial-gradient(600px 380px at 50% 30%, rgba(61,139,255,.06), transparent 70%),
+    #070a0e;
+  overflow: hidden;
+}
+
+.stage-inner {
+  position: relative;
+  line-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  box-shadow: 0 10px 40px rgba(0,0,0,.55);
+  border-radius: 4px;
+}
+.stage-inner canvas {
+  display: block;
+  border-radius: 4px;
+}
+#edOverlay {
+  position: absolute; top: 0; left: 0;
+  cursor: default;
+  touch-action: none;
+  border-radius: 4px;
+}
+
+.stage-hint {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  font-size: 11.5px; color: #8797aa;
+  background: rgba(8, 12, 18, .8);
+  border: 1px solid var(--line);
+  padding: 5px 12px; border-radius: 99px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.stage-toggle {
+  position: absolute; right: 14px; bottom: 14px;
+  border: 1px solid var(--line-2);
+  background: rgba(20, 27, 36, .9);
+  backdrop-filter: blur(8px);
+  color: #d5e2f2; font: inherit; font-size: 12.5px; font-weight: 600;
+  padding: 7px 13px; border-radius: 99px; cursor: pointer;
+}
+.stage-toggle:hover { border-color: var(--accent); color: #fff; }
+
+.ed-loading {
+  position: absolute; inset: 0;
+  background: rgba(7, 10, 14, .74);
+  backdrop-filter: blur(3px);
+  display: flex; flex-direction: column; gap: 12px;
+  align-items: center; justify-content: center;
+  font-size: 13px; color: #b9c8da;
+  z-index: 5;
+}
+.spinner {
+  width: 30px; height: 30px;
+  border: 2.5px solid rgba(255,255,255,.14);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg) } }
+
+.ed-panel {
+  flex: 0 0 372px;
+  border-left: 1px solid var(--line);
+  background: var(--bg-2);
+  min-height: 0;
+  display: flex;
+}
+.panel-scroll { flex: 1; overflow-y: auto; padding: 14px 14px 60px; }
+
+.mini-wrap {
+  position: relative;
+  border-radius: 11px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #0c1117;
+  margin-bottom: 14px;
+  height: 176px;
+  padding: 8px;
+}
+#edMini {
+  position: absolute; inset: 8px;
+  width: calc(100% - 16px); height: calc(100% - 16px);
+  object-fit: contain;
+  display: block;
+}
+.mini-cap {
+  position: absolute; left: 8px; bottom: 6px;
+  font-size: 10.5px; color: #fff;
+  background: rgba(0,0,0,.55);
+  padding: 2px 8px; border-radius: 99px;
+  letter-spacing: .3px;
+}
+
+.grp {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,.018);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.grp > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 11px 13px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #cfdcec;
+  letter-spacing: .3px;
+  display: flex; align-items: center; justify-content: space-between;
+  user-select: none;
+}
+.grp > summary::-webkit-details-marker { display: none; }
+.grp > summary::after {
+  content: "▾"; font-size: 11px; color: var(--muted); transition: transform .18s;
+}
+.grp:not([open]) > summary::after { transform: rotate(-90deg); }
+.grp-body { padding: 2px 13px 13px; }
+
+.btn-row { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+.rot-label { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+.srow {
+  display: grid;
+  grid-template-columns: 62px 1fr 34px;
+  align-items: center;
+  gap: 9px;
+  margin: 9px 0;
+  font-size: 12.5px;
+  color: #b9c8da;
+}
+.srow em {
+  font-style: normal; font-size: 11.5px; color: var(--muted);
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 22px; background: transparent; cursor: pointer; margin: 0;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 99px;
+  background: rgba(255,255,255,.13);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: #fff; border: 3px solid var(--accent);
+  margin-top: -5.5px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.4);
+  transition: transform .12s;
+}
+input[type="range"]::-webkit-slider-thumb:active { transform: scale(1.15); }
+input[type="range"]::-moz-range-track { height: 4px; border-radius: 99px; background: rgba(255,255,255,.13); }
+input[type="range"]::-moz-range-thumb {
+  width: 15px; height: 15px; border-radius: 50%; border: 3px solid var(--accent);
+  background: #fff;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.chip {
+  border: 1px solid var(--line-2);
+  background: rgba(255,255,255,.03);
+  color: #b9c8da;
+  font: inherit; font-size: 12px; font-weight: 600;
+  padding: 6px 11px; border-radius: 99px; cursor: pointer;
+  transition: all .14s;
+}
+.chip:hover { border-color: rgba(61,139,255,.6); color: #fff; }
+.chip.on {
+  background: linear-gradient(135deg, rgba(61,139,255,.9), rgba(47,111,224,.9));
+  border-color: transparent; color: #fff;
+  box-shadow: 0 4px 12px rgba(61,139,255,.28);
+}
+
+.tog-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.tog { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12.5px; color: #b9c8da; }
+.tog input { display: none; }
+.tog i {
+  width: 34px; height: 19px; border-radius: 99px;
+  background: rgba(255,255,255,.14);
+  position: relative; transition: background .18s; flex: 0 0 auto;
+}
+.tog i::after {
+  content: ""; position: absolute; top: 2.5px; left: 2.5px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; transition: transform .18s;
+}
+.tog input:checked + i { background: var(--accent); }
+.tog input:checked + i::after { transform: translateX(15px); }
+
+.note {
+  font-size: 11.5px; color: #7f8fa3; line-height: 1.6;
+  margin: 0 0 10px;
+  background: rgba(61,139,255,.06);
+  border-left: 2px solid rgba(61,139,255,.5);
+  padding: 8px 10px;
+  border-radius: 0 6px 6px 0;
+}
+
+/* ---------- modal ---------- */
+.modal {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(4, 7, 11, .72);
+  backdrop-filter: blur(6px);
+  display: grid; place-items: center;
+  padding: 20px;
+  animation: fade .16s ease both;
+}
+.modal-card {
+  width: min(440px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+  max-height: 88vh;
+  overflow: hidden;
+  animation: rise .2s cubic-bezier(.2,.8,.3,1) both;
+}
+.modal-card.wide { width: min(720px, 100%); }
+@keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.985) } to { opacity: 1; transform: none } }
+
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-head h2 { margin: 0; font-size: 16px; font-weight: 700; }
+.modal-body { padding: 16px 18px; overflow-y: auto; }
+.modal-foot {
+  display: flex; justify-content: flex-end; gap: 9px;
+  padding: 13px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.fld { display: block; margin-bottom: 13px; }
+.fld > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+.fld input[type="text"], .fld select {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  color: var(--text);
+  font: inherit; font-size: 13px;
+  padding: 10px 11px;
+  border-radius: 9px;
+  outline: none;
+}
+.fld input[type="text"]:focus, .fld select:focus { border-color: var(--accent); }
+
+.ex-summary {
+  font-size: 12.5px; color: var(--muted);
+  background: rgba(61,139,255,.07);
+  border: 1px solid rgba(61,139,255,.2);
+  border-radius: 9px;
+  padding: 9px 12px;
+}
+
+.prog { height: 7px; border-radius: 99px; background: rgba(255,255,255,.1); overflow: hidden; }
+.prog-bar {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  border-radius: 99px;
+  transition: width .22s ease;
+}
+.prog-text { font-size: 12.5px; color: var(--muted); text-align: center; margin: 12px 0 0; }
+
+.help-body { font-size: 13px; line-height: 1.72; color: #c3d1e2; }
+.help-body h3 { font-size: 13px; margin: 20px 0 8px; color: #fff; letter-spacing: .3px; }
+.help-body h3:first-of-type { margin-top: 14px; }
+.help-body ul { margin: 0; padding-left: 18px; }
+.help-body li { margin-bottom: 7px; }
+.help-body b { color: #eaf2ff; }
+.help-body code {
+  background: rgba(255,255,255,.08);
+  padding: 1px 5px; border-radius: 4px;
+  font-size: 11.5px; font-family: ui-monospace, Menlo, monospace;
+}
+.help-lead { color: var(--muted); margin: 0 0 6px; }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%; bottom: 34px; transform: translate(-50%, 20px);
+  background: rgba(24, 33, 45, .96);
+  border: 1px solid var(--line-2);
+  color: #e6eefa;
+  font-size: 13px; font-weight: 500;
+  padding: 10px 18px;
+  border-radius: 99px;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .22s, transform .22s;
+  z-index: 500;
+  white-space: nowrap;
+  max-width: 90vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- responsive ---------- */
+@media (max-width: 820px) {
+  body { font-size: 13.5px; }
+  .topbar { padding: 10px 14px; }
+  .hide-sm { display: none; }
+  #btnExport { display: none; }
+  .mobile-bar { display: flex; }
+  .pages-area { padding: 14px 14px 20px; }
+
+  .ed-body { flex-direction: column; }
+  .ed-stage { flex: 0 0 auto; height: 46vh; min-height: 260px; padding: 10px; }
+  .ed-panel { flex: 1 1 auto; border-left: none; border-top: 1px solid var(--line); }
+  .panel-scroll { padding: 12px 12px 40px; }
+  .mini-wrap { display: none; }
+
+  .dz { padding: 30px 18px 26px; border-radius: 18px; }
+  .dz h1 { font-size: 21px; }
+  .dz-feats { grid-template-columns: 1fr 1fr; }
+  .page-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+}
+
+@media (max-width: 420px) {
+  .dz-feats { grid-template-columns: 1fr; }
+  .brand-sub { display: none; }
+}
+
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8"/>
+          <path d="M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8"/>
+          <path d="M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16"/>
+          <path d="M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/>
+          <path d="M8 9h8M8 12.5h8M8 16h5"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">ScanPro</div>
+        <div class="brand-sub">智慧掃描 · 多張相片合成 PDF</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn ghost hide-sm" id="btnHelp">技術說明</button>
+      <button class="btn hide-sm" id="btnAdd">加入相片</button>
+      <button class="btn primary" id="btnExport">匯出 PDF</button>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <section id="emptyState" class="empty">
+      <div class="dz" id="dropzone">
+        <div class="dz-icon">
+          <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 16V4"/><path d="m7 9 5-5 5 5"/>
+            <path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/>
+          </svg>
+        </div>
+        <h1>把相片變成專業掃描件</h1>
+        <p class="dz-desc">一次選多張相片。自動偵測紙張邊緣、校正透視、去除陰影，最後合併成一個 PDF。</p>
+
+        <div class="dz-actions">
+          <button class="btn primary lg" id="btnPickCamera">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2L8 5h8l1.5 2h2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
+              <circle cx="12" cy="13" r="3.4"/>
+            </svg>
+            拍照掃描
+          </button>
+          <button class="btn lg" id="btnPickFiles">從相簿選擇</button>
+        </div>
+
+        <p class="dz-hint">也可以把相片拖到這裡，或按 <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>V</kbd> 貼上</p>
+
+        <ul class="dz-feats">
+          <li><b>邊緣偵測</b><span>Sobel 梯度 + 連通域找紙張四角</span></li>
+          <li><b>透視校正</b><span>單應性矩陣重採樣，梯形還原成矩形</span></li>
+          <li><b>去陰影</b><span>低頻背景除法正規化，光線變均勻</span></li>
+          <li><b>多種濾鏡</b><span>黑白高對比、增強銳化、魔幻彩色、省墨</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="pagesArea" class="pages-area hidden">
+      <div class="pages-head">
+        <div class="pages-title"><span id="pageCount">0</span> 頁<span class="muted" id="sizeInfo"></span></div>
+        <div class="pages-tools">
+          <button class="btn ghost sm" id="btnApplyAll">全部套用預設</button>
+          <button class="btn ghost sm" id="btnClearAll">清空</button>
+        </div>
+      </div>
+      <div class="page-grid" id="pageGrid"></div>
+    </section>
+
+  </main>
+
+  <div class="mobile-bar">
+    <button class="btn" id="mBtnAdd">加入相片</button>
+    <button class="btn primary" id="mBtnExport">匯出 PDF</button>
+  </div>
+</div>
+
+<!-- ============ 編輯器 ============ -->
+<div class="editor hidden" id="editor">
+  <div class="ed-head">
+    <button class="btn ghost" id="edClose">返回</button>
+    <div class="ed-title">第 <span id="edIndex">1</span> / <span id="edTotal">1</span> 頁</div>
+    <button class="btn primary" id="edApply">套用</button>
+  </div>
+
+  <div class="ed-body">
+    <div class="ed-stage" id="edStage">
+      <div class="stage-inner" id="stageInner">
+        <canvas id="edCanvas"></canvas>
+        <canvas id="edOverlay"></canvas>
+      </div>
+      <div class="stage-hint" id="stageHint">拖曳四角調整紙張邊界</div>
+      <button class="stage-toggle" id="btnToggleView">預覽效果</button>
+      <div class="ed-loading hidden" id="edLoading"><div class="spinner"></div><span>處理中…</span></div>
+    </div>
+
+    <div class="ed-panel" id="edPanel">
+      <div class="panel-scroll">
+
+        <div class="mini-wrap">
+          <canvas id="edMini"></canvas>
+          <div class="mini-cap">即時預覽</div>
+        </div>
+
+        <details class="grp" open>
+          <summary>裁切與校正</summary>
+          <div class="grp-body">
+            <div class="btn-row">
+              <button class="btn sm" id="btnAutoDetect">自動偵測邊緣</button>
+              <button class="btn sm ghost" id="btnFullFrame">整張</button>
+              <button class="btn sm ghost" id="btnResetQuad">還原</button>
+            </div>
+            <label class="srow">
+              <span>曲面展平</span>
+              <input type="range" id="rngBend" min="-45" max="45" step="1" value="0">
+              <em id="valBend">0</em>
+            </label>
+            <div class="btn-row">
+              <button class="btn sm ghost" id="btnRotL">⟲ 左轉</button>
+              <button class="btn sm ghost" id="btnRotR">⟳ 右轉</button>
+              <span class="rot-label" id="rotLabel">0°</span>
+            </div>
+            <label class="srow">
+              <span>微調角度</span>
+              <input type="range" id="rngFine" min="-12" max="12" step="0.5" value="0">
+              <em id="valFine">0°</em>
+            </label>
+          </div>
+        </details>
+
+        <details class="grp" open>
+          <summary>濾鏡與畫質</summary>
+          <div class="grp-body">
+            <div class="chips" id="presetChips"></div>
+            <label class="srow">
+              <span>去陰影</span>
+              <input type="range" id="rngShadow" min="0" max="100" step="1" value="60">
+              <em id="valShadow">60</em>
+            </label>
+            <label class="srow">
+              <span>銳化</span>
+              <input type="range" id="rngSharpen" min="0" max="150" step="5" value="35">
+              <em id="valSharpen">35</em>
+            </label>
+            <label class="srow">
+              <span>對比</span>
+              <input type="range" id="rngContrast" min="-50" max="50" step="1" value="0">
+              <em id="valContrast">0</em>
+            </label>
+            <label class="srow">
+              <span>亮度</span>
+              <input type="range" id="rngBright" min="-50" max="50" step="1" value="0">
+              <em id="valBright">0</em>
+            </label>
+            <div class="tog-row">
+              <label class="tog"><input type="checkbox" id="chkDenoise"><i></i><span>除噪</span></label>
+              <label class="tog"><input type="checkbox" id="chkMoire"><i></i><span>去摩爾紋</span></label>
+            </div>
+          </div>
+        </details>
+
+        <details class="grp">
+          <summary>修補筆刷（去手指／污漬）</summary>
+          <div class="grp-body">
+            <p class="note">開啟後切換到效果預覽，直接在畫面上塗抹要移除的區域，系統會以周圍紙張色擴散填補。</p>
+            <div class="tog-row">
+              <label class="tog"><input type="checkbox" id="chkBrush"><i></i><span>啟用筆刷</span></label>
+              <button class="btn sm ghost" id="btnUndoStroke">復原</button>
+              <button class="btn sm ghost" id="btnClearStroke">清除</button>
+            </div>
+            <label class="srow">
+              <span>筆刷大小</span>
+              <input type="range" id="rngBrush" min="8" max="90" step="1" value="30">
+              <em id="valBrush">30</em>
+            </label>
+          </div>
+        </details>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 匯出 ============ -->
+<div class="modal hidden" id="exportModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>匯出 PDF</h2>
+      <button class="icon-btn" id="exClose">✕</button>
+    </div>
+    <div class="modal-body" id="exForm">
+      <label class="fld">
+        <span>檔名</span>
+        <input type="text" id="exName">
+      </label>
+      <label class="fld">
+        <span>頁面尺寸</span>
+        <select id="exSize">
+          <option value="a4">A4（210 × 297 mm）</option>
+          <option value="letter">Letter（8.5 × 11 in）</option>
+          <option value="auto">自動（依相片比例）</option>
+        </select>
+      </label>
+      <label class="fld">
+        <span>頁邊距</span>
+        <select id="exMargin">
+          <option value="0">無</option>
+          <option value="18" selected>小（6 mm）</option>
+          <option value="36">大（12 mm）</option>
+        </select>
+      </label>
+      <label class="fld">
+        <span>畫質</span>
+        <select id="exQuality">
+          <option value="high">高（約 2200 px，檔案較大）</option>
+          <option value="mid" selected>標準（約 1700 px）</option>
+          <option value="low">輕量（約 1200 px）</option>
+        </select>
+      </label>
+      <div class="ex-summary" id="exSummary">共 0 頁</div>
+    </div>
+    <div class="modal-body hidden" id="exProgress">
+      <div class="prog"><div class="prog-bar" id="progBar"></div></div>
+      <p class="prog-text" id="progText">準備中…</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="exCancel">取消</button>
+      <button class="btn primary" id="exGo">開始匯出</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 技術說明 ============ -->
+<div class="modal hidden" id="helpModal">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2>技術說明</h2>
+      <button class="icon-btn" id="helpClose">✕</button>
+    </div>
+    <div class="modal-body help-body">
+      <p class="help-lead">這個頁面完全在你的瀏覽器本機運算，相片不會上傳到任何伺服器。以下是各項功能實際使用的演算法，以及哪些是真正還原、哪些是可調參數的近似處理。</p>
+
+      <h3>完整實作的電腦視覺</h3>
+      <ul>
+        <li><b>自動邊緣偵測</b>：灰階 → 高斯模糊 → Sobel 梯度 → 自適應門檻二值化 → 3×3 膨脹 → 連通域分析，取最大輪廓後用 <code>min/max(x+y)</code>、<code>min/max(x−y)</code> 求四個極值角點；多組門檻各跑一次，取面積最大且通過凸性／面積／邊長檢查的候選。</li>
+        <li><b>透視校正</b>：由四組對應點解 8 參數單應性矩陣（高斯消去法），對每個輸出像素做逆映射 + 雙線性取樣，梯形自動還原成正面矩形。</li>
+        <li><b>智慧去陰影</b>：取亮度低頻背景（降採樣 → 大核 box blur → 雙線性升採樣），再以 <code>輸出 = 原像素 × 目標白 / 背景亮度</code> 做除法正規化，同時保留色相。這是文件掃描的經典做法，對側光、手影、燈泡暗角都有效。</li>
+        <li><b>黑白高對比</b>：局部自適應二值化（半徑隨解析度縮放），再去除孤立雜點，把透印字跡、紙張紋理一併濾掉。</li>
+        <li><b>除噪</b>：亮度通道 3×3 中值濾波，只回寫亮度差，避免色偏。</li>
+        <li><b>去摩爾紋</b>：轉 YCbCr，僅對 Cb/Cr 色度通道做低通，消除翻拍螢幕的彩色網格，同時保住文字銳利度。</li>
+        <li><b>銳化</b>：反銳化遮罩（unsharp mask），以亮度差回寫 RGB。</li>
+        <li><b>修補筆刷</b>：筆刷遮罩 → 影像金字塔 push-pull 擴散填補，用周圍紙張色補回被遮住的區域。</li>
+      </ul>
+
+      <h3>近似處理（可調參數，非生成式 AI）</h3>
+      <ul>
+        <li><b>曲面展平</b>：真正的書頁 3D 重建需要文字行彎曲模型或深度網路。這裡改用「水平非線性重映射」（<code>x' = W·t^(1+k)</code>）＋可調滑桿，讓你把裝訂處被壓縮的內容拉回來。對輕微彎曲很有效，嚴重捲曲仍需要專業工具。</li>
+        <li><b>超高解析度</b>：以雙三次插值 + 反銳化遮罩放大，屬於訊號層面的重建，不是生成式超分模型（那種需要數十 MB 的神經網路權重）。</li>
+        <li><b>去褶皺／去污漬</b>：靠去陰影 + 自適應二值化 + 對比拉伸壓掉淺色污漬，深色污漬請用修補筆刷手動圈選。</li>
+      </ul>
+
+      <h3>PDF 產生</h3>
+      <p>沒有使用任何第三方函式庫。頁面由 JS 直接組裝 PDF 物件樹、xref 表，並把畫布輸出的 JPEG 以 <code>/DCTDecode</code> 內嵌成影像 XObject，因此檔案小、開啟快、可直接列印。</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="helpOk">知道了</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="image/*" multiple hidden>
+<input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+ * cv.js — 影像處理核心
+ * 邊緣偵測 / 透視變換 / 幾何校正 / 濾波器底層運算
+ * 純瀏覽器端運算，無任何外部依賴
+ * ========================================================= */
+(function (global) {
+  'use strict';
+
+  const CV = {};
+
+  /* ---------------- canvas 工具 ---------------- */
+
+  CV.makeCanvas = function (w, h) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w));
+    c.height = Math.max(1, Math.round(h));
+    return c;
+  };
+
+  CV.ctx = function (c) {
+    return c.getContext('2d', { willReadFrequently: true });
+  };
+
+  CV.clone = function (src) {
+    const c = CV.makeCanvas(src.width, src.height);
+    CV.ctx(c).drawImage(src, 0, 0);
+    return c;
+  };
+
+  /** 把任意影像來源縮放到最長邊 <= maxDim 的 canvas */
+  CV.drawTo = function (img, maxDim) {
+    const iw = img.width || img.naturalWidth;
+    const ih = img.height || img.naturalHeight;
+    const s = Math.min(1, (maxDim || 4096) / Math.max(iw, ih));
+    const c = CV.makeCanvas(iw * s, ih * s);
+    const ctx = CV.ctx(c);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    return c;
+  };
+
+  CV.getPixels = function (canvas) {
+    return CV.ctx(canvas).getImageData(0, 0, canvas.width, canvas.height);
+  };
+
+  /* ---------------- 灰階 / 濾波 ---------------- */
+
+  /** 回傳 { g: Float32Array 亮度, w, h } */
+  CV.gray = function (canvas) {
+    const w = canvas.width, h = canvas.height;
+    const data = CV.getPixels(canvas).data;
+    const g = new Float32Array(w * h);
+    for (let i = 0, p = 0; i < g.length; i++, p += 4) {
+      g[i] = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
+    }
+    return { g: g, w: w, h: h };
+  };
+
+  /** 一維可分離 box blur（邊界 clamp），O(n) */
+  CV.boxBlurF = function (src, w, h, r) {
+    r = Math.max(0, r | 0);
+    if (r < 1) return src.slice();
+    const n = 2 * r + 1;
+    const tmp = new Float32Array(src.length);
+    const out = new Float32Array(src.length);
+
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      let sum = 0;
+      for (let i = -r; i <= r; i++) {
+        const x = i < 0 ? 0 : (i >= w ? w - 1 : i);
+        sum += src[row + x];
+      }
+      for (let x = 0; x < w; x++) {
+        tmp[row + x] = sum / n;
+        const ax = x + r + 1; const sx = x - r;
+        sum += src[row + (ax >= w ? w - 1 : ax)] - src[row + (sx < 0 ? 0 : sx)];
+      }
+    }
+
+    for (let x = 0; x < w; x++) {
+      let sum = 0;
+      for (let i = -r; i <= r; i++) {
+        const y = i < 0 ? 0 : (i >= h ? h - 1 : i);
+        sum += tmp[y * w + x];
+      }
+      for (let y = 0; y < h; y++) {
+        out[y * w + x] = sum / n;
+        const ay = y + r + 1; const sy = y - r;
+        sum += tmp[(ay >= h ? h - 1 : ay) * w + x] - tmp[(sy < 0 ? 0 : sy) * w + x];
+      }
+    }
+    return out;
+  };
+
+  /** 灰階高斯近似（三次 box blur） */
+  CV.blurGauss = function (src, w, h, r) {
+    let a = CV.boxBlurF(src, w, h, r);
+    a = CV.boxBlurF(a, w, h, r);
+    return CV.boxBlurF(a, w, h, r);
+  };
+
+  /** Sobel 梯度強度 */
+  CV.sobel = function (g, w, h) {
+    const m = new Float32Array(w * h);
+    for (let y = 1; y < h - 1; y++) {
+      const r0 = (y - 1) * w, r1 = y * w, r2 = (y + 1) * w;
+      for (let x = 1; x < w - 1; x++) {
+        const a = g[r0 + x - 1], b = g[r0 + x], c = g[r0 + x + 1];
+        const d = g[r1 + x - 1], f = g[r1 + x + 1];
+        const p = g[r2 + x - 1], q = g[r2 + x], s = g[r2 + x + 1];
+        const gx = -a - 2 * d - p + c + 2 * f + s;
+        const gy = -a - 2 * b - c + p + 2 * q + s;
+        m[r1 + x] = Math.sqrt(gx * gx + gy * gy);
+      }
+    }
+    return m;
+  };
+
+  /* ---------------- 四邊形幾何工具 ---------------- */
+
+  CV.dist = function (a, b) {
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  /** 鞋帶公式面積（絕對值） */
+  CV.quadArea = function (q) {
+    let s = 0;
+    for (let i = 0; i < 4; i++) {
+      const a = q[i], b = q[(i + 1) % 4];
+      s += a.x * b.y - b.x * a.y;
+    }
+    return Math.abs(s) / 2;
+  };
+
+  CV.isConvex = function (q) {
+    let sign = 0;
+    for (let i = 0; i < 4; i++) {
+      const a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
+      const cr = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+      if (Math.abs(cr) < 1e-6) return false;
+      const s = cr > 0 ? 1 : -1;
+      if (sign === 0) sign = s;
+      else if (sign !== s) return false;
+    }
+    return true;
+  };
+
+  /** 依 x+y / x−y 極值排序成 TL, TR, BR, BL */
+  CV.orderQuad = function (pts) {
+    let tl = pts[0], tr = pts[0], br = pts[0], bl = pts[0];
+    let sMin = Infinity, sMax = -Infinity, dMin = Infinity, dMax = -Infinity;
+    for (const p of pts) {
+      const s = p.x + p.y, d = p.x - p.y;
+      if (s < sMin) { sMin = s; tl = p; }
+      if (s > sMax) { sMax = s; br = p; }
+      if (d > dMax) { dMax = d; tr = p; }
+      if (d < dMin) { dMin = d; bl = p; }
+    }
+    return [tl, tr, br, bl];
+  };
+
+  /** 檢查四邊形是否合理（可當作紙張邊界） */
+  CV.validQuad = function (q, w, h) {
+    if (!q || q.length !== 4) return false;
+    if (!CV.isConvex(q)) return false;
+    const area = CV.quadArea(q);
+    const ratio = area / (w * h);
+    if (ratio < 0.10 || ratio > 0.985) return false;
+    const diag = Math.sqrt(w * w + h * h);
+    for (let i = 0; i < 4; i++) {
+      if (CV.dist(q[i], q[(i + 1) % 4]) < diag * 0.09) return false;
+    }
+    // 對邊長度不應相差過份（避免退化成三角形）
+    const e0 = CV.dist(q[0], q[1]), e2 = CV.dist(q[2], q[3]);
+    const e1 = CV.dist(q[1], q[2]), e3 = CV.dist(q[3], q[0]);
+    if (e0 / e2 > 3.2 || e2 / e0 > 3.2) return false;
+    if (e1 / e3 > 3.2 || e3 / e1 > 3.2) return false;
+    return true;
+  };
+
+  /* ---------------- 連通域 ---------------- */
+
+  function dilate(mask, w, h) {
+    const out = new Uint8Array(mask.length);
+    for (let y = 0; y < h; y++) {
+      const r = y * w;
+      for (let x = 0; x < w; x++) {
+        const i = r + x;
+        if (mask[i]) { out[i] = 1; continue; }
+        if ((x > 0 && mask[i - 1]) || (x < w - 1 && mask[i + 1]) ||
+            (y > 0 && mask[i - w]) || (y < h - 1 && mask[i + w])) out[i] = 1;
+      }
+    }
+    return out;
+  }
+
+  function largestComponent(mask, w, h) {
+    const label = new Uint8Array(w * h);
+    const stack = new Int32Array(w * h);
+    let best = null;
+
+    for (let start = 0; start < mask.length; start++) {
+      if (!mask[start] || label[start]) continue;
+      let sp = 0;
+      stack[sp++] = start;
+      label[start] = 1;
+
+      const comp = { count: 0, minX: w, minY: h, maxX: 0, maxY: 0, px: [] };
+      while (sp > 0) {
+        const p = stack[--sp];
+        const x = p % w, y = (p - x) / w;
+        comp.count++;
+        comp.px.push(p);
+        if (x < comp.minX) comp.minX = x;
+        if (x > comp.maxX) comp.maxX = x;
+        if (y < comp.minY) comp.minY = y;
+        if (y > comp.maxY) comp.maxY = y;
+
+        if (x > 0 && mask[p - 1] && !label[p - 1]) { label[p - 1] = 1; stack[sp++] = p - 1; }
+        if (x < w - 1 && mask[p + 1] && !label[p + 1]) { label[p + 1] = 1; stack[sp++] = p + 1; }
+        if (y > 0 && mask[p - w] && !label[p - w]) { label[p - w] = 1; stack[sp++] = p - w; }
+        if (y < h - 1 && mask[p + w] && !label[p + w]) { label[p + w] = 1; stack[sp++] = p + w; }
+      }
+
+      const bboxArea = (comp.maxX - comp.minX + 1) * (comp.maxY - comp.minY + 1);
+      comp.bboxArea = bboxArea;
+      if (!best || bboxArea > best.bboxArea ||
+          (bboxArea === best.bboxArea && comp.count > best.count)) {
+        best = comp;
+      }
+    }
+    return best;
+  }
+
+  /** 從遮罩的最大連通域抓四個極值角點 */
+  function quadFromComponent(comp, w, h) {
+    if (!comp || comp.px.length < 40) return null;
+    const pts = [];
+    const step = Math.max(1, Math.floor(comp.px.length / 6000));
+    for (let i = 0; i < comp.px.length; i += step) {
+      const p = comp.px[i];
+      pts.push({ x: p % w, y: (p - (p % w)) / w });
+    }
+    const q = CV.orderQuad(pts);
+    // 去重：四個角必須明顯不同
+    for (let i = 0; i < 4; i++) {
+      for (let j = i + 1; j < 4; j++) {
+        if (CV.dist(q[i], q[j]) < Math.min(w, h) * 0.08) return null;
+      }
+    }
+    return q;
+  }
+
+  /**
+   * 自動偵測文件四邊界
+   * @param {HTMLCanvasElement} canvas 來源（任意尺寸，內部會縮到 420px 處理）
+   * @returns {Array<{x:number,y:number}>|null} 正規化 (0~1) 座標 TL,TR,BR,BL
+   */
+  CV.DETECT_SIZE = 600;
+
+  CV.detectQuad = function (canvas) {
+    const small = CV.drawTo(canvas, CV.DETECT_SIZE);
+    const w = small.width, h = small.height;
+    const gray = CV.gray(small);
+    const blurred = CV.blurGauss(gray.g, w, h, 1);
+    const mag = CV.sobel(blurred, w, h);
+
+    // 梯度統計
+    let sum = 0, sum2 = 0, n = 0;
+    for (let i = 0; i < mag.length; i++) {
+      const v = mag[i];
+      if (!isFinite(v)) continue;
+      sum += v; sum2 += v * v; n++;
+    }
+    if (!n) return null;
+    const mean = sum / n;
+    const std = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
+
+    const factors = [0.9, 1.4, 2.0, 2.9];
+    let best = null, bestArea = 0;
+
+    for (const f of factors) {
+      const th = Math.max(mean + f * std, 18);
+      const mask = new Uint8Array(w * h);
+      for (let i = 0; i < mask.length; i++) mask[i] = mag[i] > th ? 1 : 0;
+
+      const d = dilate(mask, w, h);
+      const comp = largestComponent(d, w, h);
+      if (!comp) continue;
+      const q = quadFromComponent(comp, w, h);
+      if (!q) continue;
+      if (!CV.validQuad(q, w, h)) continue;
+
+      const area = CV.quadArea(q);
+      if (area > bestArea) { bestArea = area; best = q; }
+    }
+
+    if (!best) return null;
+    return best.map(function (p) {
+      return { x: p.x / w, y: p.y / h };
+    });
+  };
+
+  /* ---------------- 邊緣精修（吸附到最強梯度） ---------------- */
+
+  function sampleBilinear(src, w, h, x, y) {
+    if (x < 0) x = 0; else if (x > w - 1) x = w - 1;
+    if (y < 0) y = 0; else if (y > h - 1) y = h - 1;
+    const x0 = x | 0, y0 = y | 0;
+    const x1 = x0 < w - 1 ? x0 + 1 : x0;
+    const y1 = y0 < h - 1 ? y0 + 1 : y0;
+    const fx = x - x0, fy = y - y0;
+    const a = src[y0 * w + x0], b = src[y0 * w + x1];
+    const c = src[y1 * w + x0], d = src[y1 * w + x1];
+    return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+  }
+
+  function median(arr) {
+    const a = arr.slice().sort(function (p, q) { return p - q; });
+    const n = a.length;
+    return n % 2 ? a[(n - 1) >> 1] : (a[n / 2 - 1] + a[n / 2]) / 2;
+  }
+
+  /**
+   * 把偵測到的四邊各自吸附到最強梯度，再以擬合直線求交點
+   * 可同時修正邊的位移與角度誤差
+   */
+  CV.refineQuad = function (canvas, quadNorm) {
+    const work = Math.max(canvas.width, canvas.height) > 1200 ? CV.drawTo(canvas, 1200) : canvas;
+    const W = work.width, H = work.height;
+    const g = CV.gray(work);
+    const blurred = CV.blurGauss(g.g, W, H, 1);
+    const mag = CV.sobel(blurred, W, H);
+
+    const q = quadNorm.map(function (p) { return { x: p.x * W, y: p.y * H }; });
+    const R = Math.max(6, Math.round(Math.min(W, H) * 0.022));
+    const lines = [];
+
+    for (let e = 0; e < 4; e++) {
+      const a = q[e], b = q[(e + 1) % 4];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const L = Math.hypot(dx, dy);
+      if (L < 30) return quadNorm;
+      const ux = dx / L, uy = dy / L;
+      const nx = -uy, ny = ux;
+
+      const pts = [], offs = [];
+      for (let k = 1; k <= 21; k++) {
+        const t = k / 22;
+        const px = a.x + dx * t, py = a.y + dy * t;
+        let bestD = null, bestV = -1;
+        for (let d = -R; d <= R; d += 1) {
+          const v = sampleBilinear(mag, W, H, px + nx * d, py + ny * d) *
+            (1 - 0.35 * Math.abs(d) / R);
+          if (v > bestV) { bestV = v; bestD = d; }
+        }
+        if (bestD !== null) {
+          offs.push(bestD);
+          pts.push({ x: px + nx * bestD, y: py + ny * bestD, d: bestD });
+        }
+      }
+      if (pts.length < 10) return quadNorm;
+
+      // 去掉離群樣本後再擬合
+      const m0 = median(offs);
+      const kept = pts.filter(function (p) { return Math.abs(p.d - m0) <= 3.5; });
+      if (kept.length < 8) return quadNorm;
+
+      const line = fitLine(kept);
+      if (!line || line.rms > 2.2) return quadNorm;
+
+      // 角度與位移都不能跑太遠
+      const cross = Math.abs(line.d.x * uy - line.d.y * ux);
+      if (cross > 0.045) return quadNorm;
+      const off = (line.p.x - (a.x + b.x) / 2) * nx + (line.p.y - (a.y + b.y) / 2) * ny;
+      if (Math.abs(off) > R * 0.8) return quadNorm;
+
+      lines.push({ p: line.p, d: line.d, n: { x: nx, y: ny }, off: off });
+    }
+
+    const out = [];
+    for (let i = 0; i < 4; i++) {
+      const l1 = lines[(i + 3) % 4], l2 = lines[i];
+      const den = l1.d.x * l2.d.y - l1.d.y * l2.d.x;
+      if (Math.abs(den) < 1e-6) return quadNorm;
+      const t = ((l2.p.x - l1.p.x) * l2.d.y - (l2.p.y - l1.p.y) * l2.d.x) / den;
+      out.push({ x: l1.p.x + l1.d.x * t, y: l1.p.y + l1.d.y * t });
+    }
+
+    const diag = Math.hypot(W, H);
+    for (let i = 0; i < 4; i++) {
+      if (!isFinite(out[i].x) || !isFinite(out[i].y)) return quadNorm;
+      if (CV.dist(out[i], q[i]) > diag * 0.035) return quadNorm;
+      if (out[i].x < -W * 0.02 || out[i].x > W * 1.02 ||
+          out[i].y < -H * 0.02 || out[i].y > H * 1.02) return quadNorm;
+    }
+
+    const ordered = CV.orderQuad(out);
+    if (!CV.validQuad(ordered, W, H)) return quadNorm;
+
+    // 面積不應劇烈改變
+    const a0 = CV.quadArea(q), a1 = CV.quadArea(ordered);
+    if (Math.abs(a1 - a0) / a0 > 0.15) return quadNorm;
+
+    return ordered.map(function (p) {
+      return { x: Math.min(1, Math.max(0, p.x / W)), y: Math.min(1, Math.max(0, p.y / H)) };
+    });
+  };
+
+  /** 最小平方直線擬合（PCA），回傳中心點、方向與 RMS */
+  function fitLine(pts) {
+    let mx = 0, my = 0;
+    for (let i = 0; i < pts.length; i++) { mx += pts[i].x; my += pts[i].y; }
+    mx /= pts.length; my /= pts.length;
+    let sxx = 0, sxy = 0, syy = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const dx = pts[i].x - mx, dy = pts[i].y - my;
+      sxx += dx * dx; sxy += dx * dy; syy += dy * dy;
+    }
+    const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    const d = { x: Math.cos(theta), y: Math.sin(theta) };
+    let ss = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const dx = pts[i].x - mx, dy = pts[i].y - my;
+      const perp = -dx * d.y + dy * d.x;
+      ss += perp * perp;
+    }
+    return { p: { x: mx, y: my }, d: d, rms: Math.sqrt(ss / pts.length) };
+  }
+
+  /* ---------------- 單應性矩陣 ---------------- */
+
+  function solveLinear(A, b) {
+    const n = b.length;
+    for (let i = 1; i < n; i++) {
+      // 部分主元
+      let piv = i - 1, maxv = Math.abs(A[piv][i - 1]);
+      for (let r = i; r < n; r++) {
+        const v = Math.abs(A[r][i - 1]);
+        if (v > maxv) { maxv = v; piv = r; }
+      }
+      if (maxv < 1e-12) return null;
+      if (piv !== i - 1) {
+        const t = A[piv]; A[piv] = A[i - 1]; A[i - 1] = t;
+        const tb = b[piv]; b[piv] = b[i - 1]; b[i - 1] = tb;
+      }
+      for (let r = i; r < n; r++) {
+        const f = A[r][i - 1] / A[i - 1][i - 1];
+        if (!f) continue;
+        for (let c = i - 1; c < n; c++) A[r][c] -= f * A[i - 1][c];
+        b[r] -= f * b[i - 1];
+      }
+    }
+    const x = new Float64Array(n);
+    for (let i = n - 1; i >= 0; i--) {
+      let s = b[i];
+      for (let c = i + 1; c < n; c++) s -= A[i][c] * x[c];
+      if (Math.abs(A[i][i]) < 1e-12) return null;
+      x[i] = s / A[i][i];
+    }
+    return x;
+  }
+
+  /** 由 4 組對應點求 homography（from -> to），回傳 8 個係數 */
+  CV.homography = function (from, to) {
+    const A = [], b = [];
+    for (let i = 0; i < 4; i++) {
+      const x = from[i].x, y = from[i].y;
+      const u = to[i].x, v = to[i].y;
+      A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+      A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+    }
+    const h = solveLinear(A, b);
+    if (!h) return null;
+    return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]];
+  };
+
+  CV.applyH = function (H, x, y) {
+    const den = H[6] * x + H[7] * y + 1;
+    if (Math.abs(den) < 1e-9) return null;
+    return {
+      x: (H[0] * x + H[1] * y + H[2]) / den,
+      y: (H[3] * x + H[4] * y + H[5]) / den
+    };
+  };
+
+  /* ---------------- 透視變換（雙線性重採樣） ---------------- */
+
+  /**
+   * @param {HTMLCanvasElement} src
+   * @param {Array<{x,y}>} quadNorm 正規化四角 TL,TR,BR,BL
+   * @param {number} maxDim 輸出最長邊上限
+   */
+  CV.warp = function (src, quadNorm, maxDim) {
+    const SW = src.width, SH = src.height;
+    const quad = quadNorm.map(function (p) {
+      return { x: p.x * SW, y: p.y * SH };
+    });
+
+    const wTop = CV.dist(quad[0], quad[1]);
+    const wBot = CV.dist(quad[3], quad[2]);
+    const hLft = CV.dist(quad[0], quad[3]);
+    const hRgt = CV.dist(quad[1], quad[2]);
+
+    let ow = Math.max(wTop, wBot);
+    let oh = Math.max(hLft, hRgt);
+    if (!isFinite(ow) || !isFinite(oh) || ow < 4 || oh < 4) return CV.clone(src);
+
+    const scale = Math.min(1, (maxDim || 2400) / Math.max(ow, oh));
+    ow = Math.max(24, Math.round(ow * scale));
+    oh = Math.max(24, Math.round(oh * scale));
+
+    const dst = [
+      { x: 0, y: 0 }, { x: ow, y: 0 }, { x: ow, y: oh }, { x: 0, y: oh }
+    ];
+    const H = CV.homography(dst, quad);
+    if (!H) return CV.clone(src);
+
+    const srcData = CV.getPixels(src).data;
+    const out = CV.makeCanvas(ow, oh);
+    const outCtx = CV.ctx(out);
+    const img = outCtx.createImageData(ow, oh);
+    const d = img.data;
+
+    for (let y = 0; y < oh; y++) {
+      const Y = y + 0.5;
+      for (let x = 0; x < ow; x++) {
+        const X = x + 0.5;
+        const den = H[6] * X + H[7] * Y + 1;
+        const sx = (H[0] * X + H[1] * Y + H[2]) / den;
+        const sy = (H[3] * X + H[4] * Y + H[5]) / den;
+        const o = (y * ow + x) * 4;
+
+        if (sx < 0 || sy < 0 || sx > SW - 1 || sy > SH - 1) {
+          d[o] = 255; d[o + 1] = 255; d[o + 2] = 255; d[o + 3] = 255;
+          continue;
+        }
+        const x0 = sx | 0, y0 = sy | 0;
+        const x1 = x0 < SW - 1 ? x0 + 1 : x0;
+        const y1 = y0 < SH - 1 ? y0 + 1 : y0;
+        const fx = sx - x0, fy = sy - y0;
+        const i00 = (y0 * SW + x0) * 4, i10 = (y0 * SW + x1) * 4;
+        const i01 = (y1 * SW + x0) * 4, i11 = (y1 * SW + x1) * 4;
+        const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy);
+        const w01 = (1 - fx) * fy, w11 = fx * fy;
+
+        for (let ch = 0; ch < 3; ch++) {
+          d[o + ch] = srcData[i00 + ch] * w00 + srcData[i10 + ch] * w10 +
+            srcData[i01 + ch] * w01 + srcData[i11 + ch] * w11;
+        }
+        d[o + 3] = 255;
+      }
+    }
+    outCtx.putImageData(img, 0, 0);
+    return out;
+  };
+
+  /* ---------------- 旋轉 ---------------- */
+
+  /** 90 度倍數旋轉（正數 = 順時針） */
+  CV.rotate90 = function (src, deg) {
+    const d = ((deg % 360) + 360) % 360;
+    if (d === 0) return CV.clone(src);
+    const w = src.width, h = src.height;
+    const swap = d === 90 || d === 270;
+    const out = CV.makeCanvas(swap ? h : w, swap ? w : h);
+    const ctx = CV.ctx(out);
+    ctx.save();
+    ctx.translate(out.width / 2, out.height / 2);
+    ctx.rotate(d * Math.PI / 180);
+    ctx.drawImage(src, -w / 2, -h / 2);
+    ctx.restore();
+    return out;
+  };
+
+  /** 任意角度旋轉（白底、自動擴張畫布） */
+  CV.rotateFree = function (src, deg) {
+    if (!deg) return CV.clone(src);
+    const rad = deg * Math.PI / 180;
+    const w = src.width, h = src.height;
+    const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
+    const ow = Math.round(w * cos + h * sin);
+    const oh = Math.round(w * sin + h * cos);
+    const out = CV.makeCanvas(ow, oh);
+    const ctx = CV.ctx(out);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, ow, oh);
+    ctx.translate(ow / 2, oh / 2);
+    ctx.rotate(rad);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, -w / 2, -h / 2);
+    return out;
+  };
+
+  /* ---------------- 曲面展平（水平非線性重映射） ---------------- */
+
+  /**
+   * @param {number} k -1..1，正數 = 左側被壓縮的內容向外拉伸
+   */
+  CV.unbend = function (src, k) {
+    if (!k) return CV.clone(src);
+    const w = src.width, h = src.height;
+    const srcData = CV.getPixels(src).data;
+    const out = CV.makeCanvas(w, h);
+    const outCtx = CV.ctx(out);
+    const img = outCtx.createImageData(w, h);
+    const d = img.data;
+    const exp = 1 + k * 0.9;
+
+    // 預先算好每個目標 x 對應的來源 x
+    const mapX = new Float32Array(w);
+    for (let x = 0; x < w; x++) {
+      const t = x / Math.max(1, w - 1);
+      mapX[x] = Math.pow(t, exp) * (w - 1);
+    }
+
+    for (let y = 0; y < h; y++) {
+      const row = y * w * 4;
+      for (let x = 0; x < w; x++) {
+        const sx = mapX[x];
+        const x0 = sx | 0;
+        const x1 = x0 < w - 1 ? x0 + 1 : x0;
+        const fx = sx - x0;
+        const i0 = row + x0 * 4, i1 = row + x1 * 4;
+        const o = row + x * 4;
+        d[o] = srcData[i0] * (1 - fx) + srcData[i1] * fx;
+        d[o + 1] = srcData[i0 + 1] * (1 - fx) + srcData[i1 + 1] * fx;
+        d[o + 2] = srcData[i0 + 2] * (1 - fx) + srcData[i1 + 2] * fx;
+        d[o + 3] = 255;
+      }
+    }
+    outCtx.putImageData(img, 0, 0);
+    return out;
+  };
+
+  /* ---------------- 修補：金字塔擴散填補 ---------------- */
+
+  /**
+   * @param {HTMLCanvasElement} src
+   * @param {Uint8Array} mask 長度 w*h，1 = 要填補
+   */
+  CV.inpaint = function (src, mask) {
+    const w = src.width, h = src.height;
+    const data = CV.getPixels(src).data;
+
+    // 建立金字塔
+    const levels = [];
+    let cw = w, ch = h;
+    let r = new Float32Array(w * h);
+    let g = new Float32Array(w * h);
+    let b = new Float32Array(w * h);
+    let a = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const known = mask[i] ? 0 : 1;
+      const o = i * 4;
+      r[i] = data[o] * known; g[i] = data[o + 1] * known; b[i] = data[o + 2] * known;
+      a[i] = known;
+    }
+    levels.push({ r: r, g: g, b: b, w: a, cw: cw, ch: ch });
+
+    while (cw > 2 && ch > 2) {
+      const nw = Math.max(1, cw >> 1), nh = Math.max(1, ch >> 1);
+      const pr = new Float32Array(nw * nh), pg = new Float32Array(nw * nh);
+      const pb = new Float32Array(nw * nh), pa = new Float32Array(nw * nh);
+      const L = levels[levels.length - 1];
+      for (let y = 0; y < nh; y++) {
+        for (let x = 0; x < nw; x++) {
+          const x0 = x * 2, y0 = y * 2;
+          let sr = 0, sg = 0, sb = 0, sa = 0, cnt = 0;
+          for (let dy = 0; dy < 2; dy++) {
+            const yy = y0 + dy; if (yy >= L.ch) continue;
+            for (let dx = 0; dx < 2; dx++) {
+              const xx = x0 + dx; if (xx >= L.cw) continue;
+              const i = yy * L.cw + xx;
+              sr += L.r[i]; sg += L.g[i]; sb += L.b[i]; sa += L.w[i];
+              cnt++;
+            }
+          }
+          const i = y * nw + x;
+          pr[i] = sr / cnt; pg[i] = sg / cnt; pb[i] = sb / cnt; pa[i] = sa / cnt;
+        }
+      }
+      levels.push({ r: pr, g: pg, b: pb, w: pa, cw: nw, ch: nh });
+      cw = nw; ch = nh;
+    }
+
+    // 由上而下補值
+    for (let l = levels.length - 2; l >= 0; l--) {
+      const cur = levels[l], up = levels[l + 1];
+      for (let y = 0; y < cur.ch; y++) {
+        for (let x = 0; x < cur.cw; x++) {
+          const i = y * cur.cw + x;
+          if (cur.w[i] > 1e-4) continue;
+          const ux = Math.min(up.cw - 1, Math.floor(x / 2));
+          const uy = Math.min(up.ch - 1, Math.floor(y / 2));
+          const j = uy * up.cw + ux;
+          if (up.w[j] > 1e-4) {
+            cur.r[i] = up.r[j] / up.w[j];
+            cur.g[i] = up.g[j] / up.w[j];
+            cur.b[i] = up.b[j] / up.w[j];
+            cur.w[i] = 1;
+          }
+        }
+      }
+    }
+
+    const base = levels[0];
+    const N = w * h;
+    const fr = new Float32Array(N), fg = new Float32Array(N), fb = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      if (base.w[i] > 1e-4) {
+        fr[i] = base.r[i] / base.w[i];
+        fg[i] = base.g[i] / base.w[i];
+        fb[i] = base.b[i] / base.w[i];
+      } else {
+        fr[i] = fg[i] = fb[i] = 255;
+      }
+    }
+
+    // 與周圍紙張色對齊（文件掃描時填補結果應接近紙白）
+    let fillN = 0, fillSum = 0, ringN = 0, ringSum = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (mask[i]) {
+          fillSum += 0.299 * fr[i] + 0.587 * fg[i] + 0.114 * fb[i];
+          fillN++;
+          continue;
+        }
+        let near = false;
+        for (let dy = -2; dy <= 2 && !near; dy++) {
+          const yy = y + dy;
+          if (yy < 0 || yy >= h) continue;
+          for (let dx = -2; dx <= 2; dx++) {
+            const xx = x + dx;
+            if (xx < 0 || xx >= w) continue;
+            if (mask[yy * w + xx]) { near = true; break; }
+          }
+        }
+        if (near) {
+          ringSum += 0.299 * fr[i] + 0.587 * fg[i] + 0.114 * fb[i];
+          ringN++;
+        }
+      }
+    }
+
+    let gain = 1;
+    if (fillN > 0 && ringN > 0) {
+      const fillMean = fillSum / fillN;
+      const ringMean = ringSum / ringN;
+      if (ringMean > 165 && fillMean > 10) {
+        gain = Math.min(1.55, Math.max(0.8, ringMean / fillMean));
+      }
+    }
+
+    const out = CV.makeCanvas(w, h);
+    const outCtx = CV.ctx(out);
+    const img = outCtx.createImageData(w, h);
+    const d = img.data;
+    for (let i = 0; i < N; i++) {
+      const o = i * 4;
+      const g = mask[i] ? gain : 1;
+      d[o] = fr[i] * g;
+      d[o + 1] = fg[i] * g;
+      d[o + 2] = fb[i] * g;
+      d[o + 3] = 255;
+    }
+    outCtx.putImageData(img, 0, 0);
+    return out;
+  };
+
+  /* ---------------- 邊框修剪 ---------------- */
+
+  /**
+   * 若畫面外緣殘留桌面背景（明顯異於紙張顏色），自動修掉細邊
+   * 需要「從邊緣連續」且寬度 < 1.2%，避免修掉文件本身的深色標題列
+   */
+  CV.trimBorders = function (canvas) {
+    const w = canvas.width, h = canvas.height;
+    const data = CV.getPixels(canvas).data;
+    const lumAt = function (x, y) {
+      const p = (y * w + x) * 4;
+      return 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
+    };
+
+    // 中央區域亮度中位數
+    const hist = new Uint32Array(256);
+    let cnt = 0;
+    const x0 = (w * 0.25) | 0, x1 = (w * 0.75) | 0;
+    const y0 = (h * 0.25) | 0, y1 = (h * 0.75) | 0;
+    for (let y = y0; y < y1; y += 3) {
+      for (let x = x0; x < x1; x += 3) {
+        hist[lumAt(x, y) | 0]++;
+        cnt++;
+      }
+    }
+    if (!cnt) return canvas;
+    let acc = 0, med = 255;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= cnt / 2) { med = v; break; } }
+
+    const maxBand = Math.max(2, Math.round(Math.min(w, h) * 0.012));
+    const TH = 55;
+
+    function lineMean(side, k) {
+      let sum = 0, n = 0;
+      if (side === 'l' || side === 'r') {
+        const x = side === 'l' ? k : w - 1 - k;
+        for (let y = (h * 0.15) | 0; y < (h * 0.85) | 0; y += 2) { sum += lumAt(x, y); n++; }
+      } else {
+        const y = side === 't' ? k : h - 1 - k;
+        for (let x = (w * 0.15) | 0; x < (w * 0.85) | 0; x += 2) { sum += lumAt(x, y); n++; }
+      }
+      return n ? sum / n : med;
+    }
+
+    function band(side) {
+      let k = 0;
+      while (k < maxBand) {
+        const m = lineMean(side, k);
+        if (Math.abs(m - med) < TH) break;
+        k++;
+      }
+      // 一直延伸到上限 → 視為內容（例如滿版深色標題）
+      return k >= maxBand ? 0 : k;
+    }
+
+    const left = band('l'), right = band('r');
+    const top = band('t'), bottom = band('b');
+    if (!left && !right && !top && !bottom) return canvas;
+
+    const nw = w - left - right, nh = h - top - bottom;
+    if (nw < 40 || nh < 40) return canvas;
+
+    const out = CV.makeCanvas(nw, nh);
+    const ctx = CV.ctx(out);
+    ctx.drawImage(canvas, left, top, nw, nh, 0, 0, nw, nh);
+    return out;
+  };
+
+  /* ---------------- 由筆畫產生遮罩 ---------------- */
+
+  CV.maskFromStrokes = function (w, h, strokes) {
+    const c = CV.makeCanvas(w, h);
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#fff';
+    ctx.fillStyle = '#fff';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const s of strokes) {
+      ctx.lineWidth = Math.max(2, s.r * w);
+      ctx.beginPath();
+      const pts = s.points;
+      ctx.moveTo(pts[0].x * w, pts[0].y * h);
+      if (pts.length === 1) {
+        ctx.lineTo(pts[0].x * w + 0.1, pts[0].y * h);
+      } else {
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * w, pts[i].y * h);
+      }
+      ctx.stroke();
+    }
+    const data = ctx.getImageData(0, 0, w, h).data;
+    const mask = new Uint8Array(w * h);
+    for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4] > 127 ? 1 : 0;
+    return mask;
+  };
+
+  global.CV = CV;
+})(window);
+
+</script>
+<script>
+/* =========================================================
+ * filters.js — 色彩最佳化與畫質提升管線
+ * 去陰影 / 除噪 / 色度低通 / 自適應二值化 / 銳化 / 濾鏡預設
+ * ========================================================= */
+(function (global) {
+  'use strict';
+
+  const CV = global.CV;
+  const Filters = {};
+
+  Filters.PRESETS = [
+    { id: 'auto', label: '增強並銳化', desc: '保留色彩，拉對比、銳化文字' },
+    { id: 'bw', label: '黑白高對比', desc: '局部自適應二值化，去掉透印與紙紋' },
+    { id: 'gray', label: '灰階', desc: '柔和灰階，適合一般文件' },
+    { id: 'magic', label: '魔幻彩色', desc: '提高飽和度與白點，適合彩色圖表與印章' },
+    { id: 'ink', label: '省墨', desc: '淡化底色，列印時更省碳粉' },
+    { id: 'original', label: '原圖', desc: '只做幾何校正，不改色調' }
+  ];
+
+  Filters.DEFAULTS = {
+    preset: 'auto',
+    shadow: 95,
+    sharpen: 40,
+    contrast: 0,
+    brightness: 0,
+    denoise: false,
+    moire: false
+  };
+
+  /* ---------------- 低階工具 ---------------- */
+
+  function clamp255(v) { return v < 0 ? 0 : (v > 255 ? 255 : v); }
+
+  function read(canvas) {
+    const img = CV.getPixels(canvas);
+    return { img: img, d: img.data, w: canvas.width, h: canvas.height, n: canvas.width * canvas.height };
+  }
+
+  function write(canvas, img) {
+    CV.ctx(canvas).putImageData(img, 0, 0);
+  }
+
+  function lumOf(d, n, out) {
+    const lum = out || new Float32Array(n);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      lum[i] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+    }
+    return lum;
+  }
+
+  /* ---------------- 1. 智慧去陰影（背景除法正規化） ---------------- */
+
+  function removeShadow(canvas, strength) {
+    const R = read(canvas);
+    const { d, w, h, n } = R;
+    const lum = lumOf(d, n);
+
+    // 降採樣取低頻背景
+    const ds = 4;
+    const sw = Math.ceil(w / ds), sh = Math.ceil(h / ds);
+    const small = new Float32Array(sw * sh);
+    const cnt = new Float32Array(sw * sh);
+    for (let y = 0; y < h; y++) {
+      const row = ((y / ds) | 0) * sw, src = y * w;
+      for (let x = 0; x < w; x++) {
+        const si = row + ((x / ds) | 0);
+        small[si] += lum[src + x];
+        cnt[si] += 1;
+      }
+    }
+    for (let i = 0; i < small.length; i++) small[i] = cnt[i] ? small[i] / cnt[i] : 255;
+
+    const r = Math.max(2, Math.round(Math.min(sw, sh) / 7));
+    const bg = CV.blurGauss(small, sw, sh, r);
+
+    for (let y = 0; y < h; y++) {
+      const fy = Math.min(sh - 1.001, Math.max(0, y / ds));
+      const y0 = fy | 0, y1 = Math.min(sh - 1, y0 + 1), ty = fy - y0;
+      const r0 = y0 * sw, r1 = y1 * sw;
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        const fx = Math.min(sw - 1.001, Math.max(0, x / ds));
+        const x0 = fx | 0, x1 = Math.min(sw - 1, x0 + 1), tx = fx - x0;
+        const b = (bg[r0 + x0] * (1 - tx) + bg[r0 + x1] * tx) * (1 - ty) +
+          (bg[r1 + x0] * (1 - tx) + bg[r1 + x1] * tx) * ty;
+        let g = 246 / (b < 18 ? 18 : b);
+        if (g > 3.4) g = 3.4; else if (g < 0.5) g = 0.5;
+        g = 1 + (g - 1) * strength;
+
+        const o = (row + x) * 4;
+        d[o] = clamp255(d[o] * g);
+        d[o + 1] = clamp255(d[o + 1] * g);
+        d[o + 2] = clamp255(d[o + 2] * g);
+      }
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 2. 除噪（亮度 3×3 中值） ---------------- */
+
+  function denoise(canvas) {
+    const R = read(canvas);
+    const { d, w, h, n } = R;
+    const lum = lumOf(d, n);
+    const med = new Float32Array(n);
+    const buf = new Float32Array(9);
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) { med[i] = lum[i]; continue; }
+        let k = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          const base = i + dy * w;
+          for (let dx = -1; dx <= 1; dx++) buf[k++] = lum[base + dx];
+        }
+        for (let a = 1; a < 9; a++) {
+          const v = buf[a];
+          let b = a - 1;
+          while (b >= 0 && buf[b] > v) { buf[b + 1] = buf[b]; b--; }
+          buf[b + 1] = v;
+        }
+        med[i] = buf[4];
+      }
+    }
+
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const delta = med[i] - lum[i];
+      if (!delta) continue;
+      d[p] = clamp255(d[p] + delta);
+      d[p + 1] = clamp255(d[p + 1] + delta);
+      d[p + 2] = clamp255(d[p + 2] + delta);
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 3. 去摩爾紋（YCbCr 色度低通） ---------------- */
+
+  function removeMoire(canvas) {
+    const R = read(canvas);
+    const { d, w, h, n } = R;
+    const cb = new Float32Array(n);
+    const cr = new Float32Array(n);
+    const yy = new Float32Array(n);
+
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const Y = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+      yy[i] = Y;
+      cb[i] = d[p + 2] - Y;
+      cr[i] = d[p] - Y;
+    }
+    const r = Math.max(2, Math.round(Math.min(w, h) / 260));
+    const cbB = CV.boxBlurF(cb, w, h, r);
+    const crB = CV.boxBlurF(cr, w, h, r);
+
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const Rr = yy[i] + crB[i];
+      const Bb = yy[i] + cbB[i];
+      const Gg = (yy[i] - 0.299 * Rr - 0.114 * Bb) / 0.587;
+      d[p] = clamp255(Rr);
+      d[p + 1] = clamp255(Gg);
+      d[p + 2] = clamp255(Bb);
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 4. 自動色階 ---------------- */
+
+  function autoLevels(canvas, loPct, hiPct) {
+    loPct = loPct == null ? 0.01 : loPct;
+    hiPct = hiPct == null ? 0.99 : hiPct;
+    const R = read(canvas);
+    const { d, n } = R;
+    const hist = new Uint32Array(256);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      hist[(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]) | 0]++;
+    }
+    const loTarget = n * loPct, hiTarget = n * (1 - hiPct);
+    let acc = 0, lo = 0, hi = 255;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= loTarget) { lo = v; break; } }
+    acc = 0;
+    for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= hiTarget) { hi = v; break; } }
+
+    if (hi - lo < 30) { lo = Math.max(0, lo - 15); hi = Math.min(255, hi + 15); }
+    const scale = 255 / Math.max(20, hi - lo);
+
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) lut[v] = (v - lo) * scale;
+
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      d[p] = lut[d[p]];
+      d[p + 1] = lut[d[p + 1]];
+      d[p + 2] = lut[d[p + 2]];
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 5. 自適應二值化 ---------------- */
+
+  function adaptiveBinarize(canvas) {
+    const R = read(canvas);
+    const { d, w, h, n } = R;
+    const lum = lumOf(d, n);
+    const radius = Math.max(6, Math.round(Math.min(w, h) / 42));
+    const bg = CV.blurGauss(lum, w, h, radius);
+
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const v = lum[i] < bg[i] * 0.87 ? 0 : 255;
+      d[p] = v; d[p + 1] = v; d[p + 2] = v;
+    }
+
+    // 去孤立雜點
+    const bin = new Uint8Array(n);
+    for (let i = 0; i < n; i++) bin[i] = d[i * 4] < 128 ? 1 : 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        if (!bin[i]) continue;
+        if (bin[i - 1] + bin[i + 1] + bin[i - w] + bin[i + w] === 0) {
+          const p = i * 4;
+          d[p] = 255; d[p + 1] = 255; d[p + 2] = 255;
+        }
+      }
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 6. 飽和度 / 灰階 ---------------- */
+
+  function saturate(canvas, k) {
+    const R = read(canvas);
+    const { d, n } = R;
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const Y = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+      d[p] = clamp255(Y + (d[p] - Y) * k);
+      d[p + 1] = clamp255(Y + (d[p + 1] - Y) * k);
+      d[p + 2] = clamp255(Y + (d[p + 2] - Y) * k);
+    }
+    write(canvas, R.img);
+  }
+
+  function grayscale(canvas) {
+    const R = read(canvas);
+    const { d, n } = R;
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const Y = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+      d[p] = Y; d[p + 1] = Y; d[p + 2] = Y;
+    }
+    write(canvas, R.img);
+  }
+
+  function applyLUT(canvas, fn) {
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) lut[v] = fn(v);
+    const R = read(canvas);
+    const { d, n } = R;
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      d[p] = lut[d[p]];
+      d[p + 1] = lut[d[p + 1]];
+      d[p + 2] = lut[d[p + 2]];
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 7. 銳化（unsharp mask） ---------------- */
+
+  function unsharp(canvas, amount) {
+    const R = read(canvas);
+    const { d, w, h, n } = R;
+    const lum = lumOf(d, n);
+    const blur = CV.boxBlurF(lum, w, h, 1);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      let delta = (lum[i] - blur[i]) * amount;
+      if (delta > 80) delta = 80; else if (delta < -80) delta = -80;
+      if (!delta) continue;
+      d[p] = clamp255(d[p] + delta);
+      d[p + 1] = clamp255(d[p + 1] + delta);
+      d[p + 2] = clamp255(d[p + 2] + delta);
+    }
+    write(canvas, R.img);
+  }
+
+  /* ---------------- 8. 亮度 / 對比 ---------------- */
+
+  function brightnessContrast(canvas, brightness, contrast) {
+    const c = 1 + contrast / 100;
+    const b = brightness * 1.6;
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) lut[v] = clamp255((v - 128) * c + 128 + b);
+    applyLUT(canvas, function (v) { return lut[v]; });
+  }
+
+  /* ---------------- 主流程 ---------------- */
+
+  Filters.apply = function (source, s) {
+    s = Object.assign({}, Filters.DEFAULTS, s || {});
+    const c = CV.clone(source);
+    const preset = s.preset || 'auto';
+
+    if (s.moire) removeMoire(c);
+    if (s.denoise) denoise(c);
+
+    const shadow = Math.max(0, Math.min(100, s.shadow)) / 100;
+    if (shadow > 0.005) removeShadow(c, shadow);
+
+    if (preset === 'bw') {
+      autoLevels(c, 0.02, 0.99);
+      adaptiveBinarize(c);
+    } else if (preset === 'magic') {
+      autoLevels(c, 0.01, 0.995);
+      saturate(c, 1.42);
+    } else if (preset === 'ink') {
+      autoLevels(c, 0.02, 0.99);
+      grayscale(c);
+      applyLUT(c, function (v) { return 255 * Math.pow(v / 255, 0.82); });
+    } else if (preset === 'gray') {
+      autoLevels(c, 0.015, 0.99);
+      grayscale(c);
+    } else if (preset === 'original') {
+      // 幾何校正後原樣輸出
+    } else {
+      autoLevels(c, 0.01, 0.995);
+      saturate(c, 1.06);
+    }
+
+    const sharp = Math.max(0, Math.min(150, s.sharpen)) / 100;
+    if (sharp > 0.02 && preset !== 'bw') unsharp(c, sharp);
+
+    if (s.contrast || s.brightness) brightnessContrast(c, s.brightness || 0, s.contrast || 0);
+
+    return c;
+  };
+
+  global.Filters = Filters;
+})(window);
+
+</script>
+<script>
+/* =========================================================
+ * pipeline.js — 單頁掃描處理管線
+ * 幾何校正 → 修補 → 色彩最佳化
+ * ========================================================= */
+(function (global) {
+  'use strict';
+
+  const CV = global.CV;
+  const Filters = global.Filters;
+
+  const Pipeline = {};
+
+  Pipeline.MAX_DIM = 2200;   // 輸出/匯出的最長邊上限
+  Pipeline.PREVIEW_DIM = 1100;
+  Pipeline.THUMB_DIM = 420;
+
+  /** 預設設定（幾何 + 色彩） */
+  Pipeline.defaultSettings = function () {
+    return Object.assign({ rotate: 0, fine: 0, bend: 0 }, Filters.DEFAULTS);
+  };
+
+  Pipeline.fullQuad = function () {
+    return [
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }
+    ];
+  };
+
+  /** 載入圖片（保留 EXIF 方向） */
+  Pipeline.loadImage = function (blob) {
+    return new Promise(function (resolve, reject) {
+      if (typeof createImageBitmap === 'function') {
+        createImageBitmap(blob, { imageOrientation: 'from-image' })
+          .then(resolve)
+          .catch(function () { fallback(); });
+      } else {
+        fallback();
+      }
+
+      function fallback() {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = function () {
+          const out = {
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+            naturalWidth: img.naturalWidth,
+            naturalHeight: img.naturalHeight,
+            __img: img,
+            close: function () { URL.revokeObjectURL(url); }
+          };
+          resolve(out);
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(url);
+          reject(new Error('無法讀取這個圖片檔'));
+        };
+        img.src = url;
+      }
+    });
+  };
+
+  /** 解碼成受限尺寸的 canvas */
+  Pipeline.decode = async function (blob, maxDim) {
+    const bmp = await Pipeline.loadImage(blob);
+    const c = CV.drawTo(bmp.__img || bmp, maxDim || Pipeline.MAX_DIM);
+    if (bmp.close) bmp.close();
+    return c;
+  };
+
+  /** 偵測邊界，回傳正規化四角（失敗回傳 null） */
+  Pipeline.detect = function (srcCanvas) {
+    const coarse = CV.detectQuad(srcCanvas);
+    if (!coarse) return null;
+    try {
+      return CV.refineQuad(srcCanvas, coarse);
+    } catch (e) {
+      return coarse;
+    }
+  };
+
+  /**
+   * 完整渲染一頁
+   * @param {HTMLCanvasElement} srcCanvas 原始相片（已縮放）
+   * @param {object} page { quad, settings, strokes }
+   * @param {number} maxDim
+   */
+  Pipeline.render = function (srcCanvas, page, maxDim) {
+    const s = page.settings || {};
+    const quad = page.quad || Pipeline.fullQuad();
+    let c = CV.warp(srcCanvas, quad, maxDim || Pipeline.MAX_DIM);
+    c = CV.trimBorders(c);
+
+    const rot = (((s.rotate || 0) % 360) + 360) % 360;
+    if (rot) c = CV.rotate90(c, rot);
+    if (s.fine) c = CV.rotateFree(c, s.fine);
+    if (s.bend) c = CV.unbend(c, s.bend / 100);
+
+    if (page.strokes && page.strokes.length) {
+      const mask = CV.maskFromStrokes(c.width, c.height, page.strokes);
+      c = CV.inpaint(c, mask);
+    }
+
+    return Filters.apply(c, s);
+  };
+
+  /** 產生縮圖 dataURL */
+  Pipeline.thumb = function (canvas, maxDim) {
+    const t = CV.drawTo(canvas, maxDim || Pipeline.THUMB_DIM);
+    return t.toDataURL('image/jpeg', 0.72);
+  };
+
+  global.Pipeline = Pipeline;
+})(window);
+
+</script>
+<script>
+/* =========================================================
+ * pdf.js — 極簡 PDF 產生器
+ * 把 JPEG 位元流以 /DCTDecode 直接內嵌為影像 XObject
+ * 自行組裝物件樹與 xref 表，不依賴任何第三方函式庫
+ * ========================================================= */
+(function (global) {
+  'use strict';
+
+  const PDF = {};
+
+  const SIZES = {
+    a4: [595.28, 841.89],
+    letter: [612, 792]
+  };
+
+  function num(v) {
+    return (Math.round(v * 100) / 100).toString();
+  }
+
+  /**
+   * @param {Array<{data:Uint8Array,w:number,h:number}>} items JPEG 位元與尺寸
+   * @param {{pageSize?:string, margin?:number}} opts
+   * @returns {Blob}
+   */
+  PDF.build = function (items, opts) {
+    opts = opts || {};
+    const margin = opts.margin || 0;
+    const enc = new TextEncoder();
+    const parts = [];
+    let len = 0;
+    const offsets = {};
+
+    function put(x) {
+      const b = typeof x === 'string' ? enc.encode(x) : x;
+      parts.push(b);
+      len += b.length;
+    }
+    function objStart(n) { offsets[n] = len; put(n + ' 0 obj\n'); }
+    function objEnd() { put('endobj\n'); }
+
+    put('%PDF-1.4\n');
+    put(new Uint8Array([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A])); // 二進位標記
+
+    // 版面計算
+    const layouts = items.map(function (it) {
+      let pw, ph;
+      if (opts.pageSize === 'auto') {
+        pw = SIZES.a4[0];
+        ph = pw * (it.h / it.w);
+      } else {
+        const s = SIZES[opts.pageSize] || SIZES.a4;
+        pw = s[0]; ph = s[1];
+        // 依影像方向自動轉向
+        if (it.w > it.h && ph > pw) { const t = pw; pw = ph; ph = t; }
+      }
+      const cw = Math.max(10, pw - margin * 2);
+      const ch = Math.max(10, ph - margin * 2);
+      const scale = Math.min(cw / it.w, ch / it.h);
+      const dw = it.w * scale, dh = it.h * scale;
+      return {
+        pw: pw, ph: ph, dw: dw, dh: dh,
+        x: (pw - dw) / 2, y: (ph - dh) / 2
+      };
+    });
+
+    const total = items.length;
+    const PAGE_BASE = 4;                 // 1 catalog, 2 pages, 3 info
+    const ids = items.map(function (_, i) {
+      const p = PAGE_BASE + i * 3;
+      return { page: p, content: p + 1, image: p + 2 };
+    });
+
+    // 1. Catalog
+    objStart(1);
+    put('<< /Type /Catalog /Pages 2 0 R >>\n');
+    objEnd();
+
+    // 2. Pages
+    objStart(2);
+    put('<< /Type /Pages /Count ' + total + ' /Kids [' +
+      ids.map(function (o) { return o.page + ' 0 R'; }).join(' ') + '] >>\n');
+    objEnd();
+
+    // 3. Info
+    objStart(3);
+    put('<< /Producer (ScanPro) /Creator (ScanPro Web Scanner) >>\n');
+    objEnd();
+
+    // 每頁
+    for (let i = 0; i < total; i++) {
+      const it = items[i], L = layouts[i], id = ids[i];
+
+      const content = 'q\n' + num(L.dw) + ' 0 0 ' + num(L.dh) + ' ' +
+        num(L.x) + ' ' + num(L.y) + ' cm\n/Im0 Do\nQ\n';
+      const contentBytes = enc.encode(content);
+
+      // 頁面物件
+      objStart(id.page);
+      put('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + num(L.pw) + ' ' + num(L.ph) + ']\n' +
+        '/Resources << /XObject << /Im0 ' + id.image + ' 0 R >> /ProcSet [/PDF /ImageC] >>\n' +
+        '/Contents ' + id.content + ' 0 R >>\n');
+      objEnd();
+
+      // 內容流
+      objStart(id.content);
+      put('<< /Length ' + contentBytes.length + ' >>\nstream\n');
+      put(contentBytes);
+      put('\nendstream\n');
+      objEnd();
+
+      // 影像 XObject
+      objStart(id.image);
+      put('<< /Type /XObject /Subtype /Image /Width ' + it.w + ' /Height ' + it.h +
+        ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' +
+        it.data.length + ' >>\nstream\n');
+      put(it.data);
+      put('\nendstream\n');
+      objEnd();
+    }
+
+    // xref
+    const count = 3 + total * 3;
+    const xrefStart = len;
+    let xref = 'xref\n0 ' + (count + 1) + '\n';
+    xref += '0000000000 65535 f \n';
+    for (let n = 1; n <= count; n++) {
+      xref += String(offsets[n] || 0).padStart(10, '0') + ' 00000 n \n';
+    }
+    put(xref);
+
+    put('trailer\n<< /Size ' + (count + 1) + ' /Root 1 0 R /Info 3 0 R >>\n' +
+      'startxref\n' + xrefStart + '\n%%EOF\n');
+
+    return new Blob(parts, { type: 'application/pdf' });
+  };
+
+  global.PDF = PDF;
+})(window);
+
+</script>
+<script>
+/* =========================================================
+ * editor.js — 單頁編輯器
+ * 四角拖曳裁切 / 濾鏡調整 / 修補筆刷 / 效果預覽
+ * ========================================================= */
+(function (global) {
+  'use strict';
+
+  const CV = global.CV;
+  const Pipeline = global.Pipeline;
+  const Filters = global.Filters;
+
+  const Editor = {};
+  let el = {};
+  let st = null;
+  let inited = false;
+
+  function $(id) { return document.getElementById(id); }
+
+  function cloneSettings(s) { return Object.assign({}, s); }
+
+  function toast(msg) {
+    if (global.App && global.App.toast) global.App.toast(msg);
+  }
+
+  function tick() {
+    return new Promise(function (r) { requestAnimationFrame(function () { setTimeout(r, 0); }); });
+  }
+
+  /* ---------------- 初始化 ---------------- */
+
+  function init() {
+    if (inited) return;
+    inited = true;
+
+    el = {
+      root: $('editor'),
+      stage: $('edStage'),
+      canvas: $('edCanvas'),
+      overlay: $('edOverlay'),
+      mini: $('edMini'),
+      loading: $('edLoading'),
+      index: $('edIndex'),
+      total: $('edTotal'),
+      hint: $('stageHint'),
+      toggle: $('btnToggleView'),
+      close: $('edClose'),
+      apply: $('edApply'),
+      presetChips: $('presetChips'),
+      rngBend: $('rngBend'), valBend: $('valBend'),
+      rngFine: $('rngFine'), valFine: $('valFine'),
+      rngShadow: $('rngShadow'), valShadow: $('valShadow'),
+      rngSharpen: $('rngSharpen'), valSharpen: $('valSharpen'),
+      rngContrast: $('rngContrast'), valContrast: $('valContrast'),
+      rngBright: $('rngBright'), valBright: $('valBright'),
+      rngBrush: $('rngBrush'), valBrush: $('valBrush'),
+      chkDenoise: $('chkDenoise'),
+      chkMoire: $('chkMoire'),
+      chkBrush: $('chkBrush')
+    };
+
+    // 濾鏡 chips
+    Filters.PRESETS.forEach(function (p) {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.dataset.preset = p.id;
+      b.textContent = p.label;
+      b.title = p.desc;
+      b.addEventListener('click', function () {
+        st.page.settings.preset = p.id;
+        syncChips();
+        onSettingsChange();
+      });
+      el.presetChips.appendChild(b);
+    });
+
+    // 滑桿
+    bindRange(el.rngBend, el.valBend, function (v) {
+      st.page.settings.bend = v; geometryChanged();
+    }, function (v) { return v; });
+    bindRange(el.rngFine, el.valFine, function (v) {
+      st.page.settings.fine = v; geometryChanged();
+    }, function (v) { return v + '°'; });
+    bindRange(el.rngShadow, el.valShadow, function (v) {
+      st.page.settings.shadow = v; onSettingsChange();
+    });
+    bindRange(el.rngSharpen, el.valSharpen, function (v) {
+      st.page.settings.sharpen = v; onSettingsChange();
+    });
+    bindRange(el.rngContrast, el.valContrast, function (v) {
+      st.page.settings.contrast = v; onSettingsChange();
+    });
+    bindRange(el.rngBright, el.valBright, function (v) {
+      st.page.settings.brightness = v; onSettingsChange();
+    });
+    bindRange(el.rngBrush, el.valBrush, function () {});
+
+    el.chkDenoise.addEventListener('change', function () {
+      st.page.settings.denoise = el.chkDenoise.checked; onSettingsChange();
+    });
+    el.chkMoire.addEventListener('change', function () {
+      st.page.settings.moire = el.chkMoire.checked; onSettingsChange();
+    });
+    el.chkBrush.addEventListener('change', function () {
+      setBrush(el.chkBrush.checked);
+    });
+
+    $('btnAutoDetect').addEventListener('click', autoDetect);
+    $('btnFullFrame').addEventListener('click', function () {
+      st.page.quad = Pipeline.fullQuad();
+      st.quad = st.page.quad.map(function (p) { return { x: p.x, y: p.y }; });
+      geometryChanged();
+      drawOverlay();
+    });
+    $('btnResetQuad').addEventListener('click', function () {
+      st.page.quad = st.origQuad.map(function (p) { return { x: p.x, y: p.y }; });
+      st.quad = st.page.quad.map(function (p) { return { x: p.x, y: p.y }; });
+      geometryChanged();
+      drawOverlay();
+    });
+    $('btnRotL').addEventListener('click', function () { rotate(-90); });
+    $('btnRotR').addEventListener('click', function () { rotate(90); });
+    $('btnUndoStroke').addEventListener('click', function () {
+      if (!st.strokes.length) return;
+      st.strokes.pop();
+      renderResult();
+    });
+    $('btnClearStroke').addEventListener('click', function () {
+      if (!st.strokes.length) return;
+      st.strokes = [];
+      renderResult();
+    });
+
+    el.close.addEventListener('click', function () { close(); });
+    el.apply.addEventListener('click', apply);
+    el.toggle.addEventListener('click', function () {
+      setView(st.view === 'crop' ? 'result' : 'crop');
+    });
+
+    el.overlay.addEventListener('pointerdown', onDown);
+    el.overlay.addEventListener('pointermove', onMove);
+    el.overlay.addEventListener('pointerup', onUp);
+    el.overlay.addEventListener('pointercancel', onUp);
+
+    global.addEventListener('resize', function () {
+      if (st && !el.root.classList.contains('hidden')) { fit(); drawOverlay(); }
+    });
+  }
+
+  function bindRange(input, out, onInput, fmt) {
+    const upd = function () {
+      const v = parseFloat(input.value);
+      if (out) out.textContent = fmt ? fmt(v) : v;
+      onInput(v);
+    };
+    input.addEventListener('input', upd);
+    return upd;
+  }
+
+  /* ---------------- 開啟 ---------------- */
+
+  Editor.open = function (page, index, total, onSave) {
+    init();
+    const s = cloneSettings(page.settings || Pipeline.defaultSettings());
+    const quad = (page.quad || Pipeline.fullQuad()).map(function (p) { return { x: p.x, y: p.y }; });
+
+    st = {
+      page: { file: page.file, quad: quad, settings: s, strokes: [] },
+      origQuad: quad.map(function (p) { return { x: p.x, y: p.y }; }),
+      quad: quad.map(function (p) { return { x: p.x, y: p.y }; }),
+      strokes: (page.strokes || []).map(function (k) {
+        return { r: k.r, points: k.points.map(function (p) { return { x: p.x, y: p.y }; }) };
+      }),
+      index: index, total: total,
+      onSave: onSave,
+      view: 'crop',
+      src: null,
+      drag: -1,
+      brushOn: false,
+      drawing: null,
+      timer: null,
+      disp: { w: 0, h: 0, s: 1 }
+    };
+
+    el.index.textContent = index + 1;
+    el.total.textContent = total;
+    el.root.classList.remove('hidden');
+    el.chkBrush.checked = false;
+    setBrush(false, true);
+    setView('crop', true);
+    syncControls();
+    showLoading(true);
+
+    Pipeline.decode(page.file, 1600).then(function (canvas) {
+      if (!st) return;
+      st.src = canvas;
+      drawStage();
+      renderMini();
+      showLoading(false);
+    }).catch(function (err) {
+      showLoading(false);
+      toast(err.message || '讀取圖片失敗');
+    });
+  };
+
+  function close() {
+    el.root.classList.add('hidden');
+    st = null;
+  }
+
+  /* ---------------- 控制項同步 ---------------- */
+
+  function syncControls() {
+    const s = st.page.settings;
+    el.rngBend.value = s.bend || 0; el.valBend.textContent = s.bend || 0;
+    el.rngFine.value = s.fine || 0; el.valFine.textContent = (s.fine || 0) + '°';
+    el.rngShadow.value = s.shadow; el.valShadow.textContent = s.shadow;
+    el.rngSharpen.value = s.sharpen; el.valSharpen.textContent = s.sharpen;
+    el.rngContrast.value = s.contrast; el.valContrast.textContent = s.contrast;
+    el.rngBright.value = s.brightness; el.valBright.textContent = s.brightness;
+    el.chkDenoise.checked = !!s.denoise;
+    el.chkMoire.checked = !!s.moire;
+    $('rotLabel').textContent = (((s.rotate || 0) % 360) + 360) % 360 + '°';
+    syncChips();
+  }
+
+  function syncChips() {
+    const cur = st.page.settings.preset;
+    Array.prototype.forEach.call(el.presetChips.children, function (c) {
+      c.classList.toggle('on', c.dataset.preset === cur);
+    });
+  }
+
+  function showLoading(on) {
+    el.loading.classList.toggle('hidden', !on);
+  }
+
+  /* ---------------- 版面 ---------------- */
+
+  function fit() {
+    if (!st || !st.src) return;
+    const rect = el.stage.getBoundingClientRect();
+    const pad = 26;
+    const aw = Math.max(80, rect.width - pad);
+    const ah = Math.max(80, rect.height - pad);
+    const cw = el.canvas.width, ch = el.canvas.height;
+    if (!cw || !ch) return;
+    const scale = Math.min(aw / cw, ah / ch);
+    const w = Math.max(20, Math.round(cw * scale));
+    const h = Math.max(20, Math.round(ch * scale));
+    el.canvas.style.width = w + 'px';
+    el.canvas.style.height = h + 'px';
+    el.overlay.style.width = w + 'px';
+    el.overlay.style.height = h + 'px';
+    st.disp = { w: w, h: h, s: w / cw };
+  }
+
+  function setCanvasSize(w, h) {
+    el.canvas.width = w; el.canvas.height = h;
+    el.overlay.width = w; el.overlay.height = h;
+  }
+
+  function drawStage() {
+    if (!st || !st.src) return;
+    const src = st.src;
+    setCanvasSize(src.width, src.height);
+    const ctx = CV.ctx(el.canvas);
+    ctx.clearRect(0, 0, src.width, src.height);
+    ctx.drawImage(src, 0, 0);
+    fit();
+    drawOverlay();
+  }
+
+  /* ---------------- 覆蓋層 ---------------- */
+
+  function drawOverlay() {
+    if (!st || !st.src) return;
+    const w = el.overlay.width, h = el.overlay.height;
+    const ctx = CV.ctx(el.overlay);
+    ctx.clearRect(0, 0, w, h);
+
+    if (st.view === 'result') return;
+
+    const q = st.quad.map(function (p) { return { x: p.x * w, y: p.y * h }; });
+
+    // 遮暗裁切範圍以外
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, w, h);
+    ctx.moveTo(q[0].x, q[0].y);
+    ctx.lineTo(q[1].x, q[1].y);
+    ctx.lineTo(q[2].x, q[2].y);
+    ctx.lineTo(q[3].x, q[3].y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(4,8,14,0.52)';
+    ctx.fill('evenodd');
+    ctx.restore();
+
+    // 邊框
+    ctx.beginPath();
+    ctx.moveTo(q[0].x, q[0].y);
+    for (let i = 1; i < 4; i++) ctx.lineTo(q[i].x, q[i].y);
+    ctx.closePath();
+    ctx.lineWidth = Math.max(1.5, 2 / st.disp.s);
+    ctx.strokeStyle = '#3d8bff';
+    ctx.stroke();
+
+    // 角點
+    const r = Math.max(6, 11 / st.disp.s);
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(q[i].x, q[i].y, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(61,139,255,0.22)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(q[i].x, q[i].y, r * 0.62, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.lineWidth = Math.max(1.2, 2 / st.disp.s);
+      ctx.strokeStyle = '#3d8bff';
+      ctx.stroke();
+    }
+  }
+
+  /* ---------------- 指標互動 ---------------- */
+
+  function toNorm(e) {
+    const rect = el.overlay.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top) / rect.height
+    };
+  }
+
+  function onDown(e) {
+    if (!st || !st.src) return;
+
+    if (st.view === 'result') {
+      if (!st.brushOn) return;
+      const p = toNorm(e);
+      st.drawing = { r: parseFloat(el.rngBrush.value) / 1000, points: [p] };
+      el.overlay.setPointerCapture(e.pointerId);
+      paintStroke();
+      return;
+    }
+
+    const p = toNorm(e);
+    const screenR = 26 / el.overlay.getBoundingClientRect().width; // 26px 在正規化空間
+    let best = -1, bestD = 1e9;
+    for (let i = 0; i < 4; i++) {
+      const d = Math.hypot(st.quad[i].x - p.x, st.quad[i].y - p.y);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    if (bestD > Math.max(screenR, 0.045)) return;
+    st.drag = best;
+    el.overlay.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!st) return;
+    if (st.drawing) {
+      const p = toNorm(e);
+      const last = st.drawing.points[st.drawing.points.length - 1];
+      if (Math.hypot(p.x - last.x, p.y - last.y) > 0.004) {
+        st.drawing.points.push(p);
+        paintStroke();
+      }
+      return;
+    }
+    if (st.drag < 0) {
+      // 靠近角點時顯示可拖曳游標
+      const p = toNorm(e);
+      const rect = el.overlay.getBoundingClientRect();
+      const tol = 26 / rect.width;
+      let near = false;
+      for (let i = 0; i < 4; i++) {
+        if (Math.hypot(st.quad[i].x - p.x, st.quad[i].y - p.y) < tol) { near = true; break; }
+      }
+      el.overlay.style.cursor = near ? 'grab' : 'default';
+      return;
+    }
+    const p = toNorm(e);
+    st.quad[st.drag] = { x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) };
+    drawOverlay();
+    e.preventDefault();
+  }
+
+  function onUp(e) {
+    if (!st) return;
+    if (st.drawing) {
+      if (st.drawing.points.length) {
+        st.strokes.push(st.drawing);
+      }
+      st.drawing = null;
+      renderResult();
+      return;
+    }
+    if (st.drag >= 0) {
+      st.drag = -1;
+      st.page.quad = st.quad.map(function (p) { return { x: p.x, y: p.y }; });
+      if (st.strokes.length) {
+        st.strokes = [];
+        toast('重新裁切後已清除修補痕跡');
+      }
+      renderMini();
+    }
+  }
+
+  /* ---------------- 筆刷 ---------------- */
+
+  function setBrush(on, silent) {
+    st.brushOn = on;
+    el.overlay.style.cursor = on ? 'crosshair' : '';
+    if (on && st.view !== 'result') setView('result');
+    if (!on && st.view === 'result' && !silent) {
+      el.hint.textContent = '點「返回裁切」可調整四角';
+      return;
+    }
+    if (!silent) {
+      el.hint.textContent = on ? '在畫面上塗抹要移除的區域' : '';
+    }
+  }
+
+  function paintStroke() {
+    // 立即畫在覆蓋層做視覺回饋
+    const ctx = CV.ctx(el.overlay);
+    const w = el.overlay.width, h = el.overlay.height;
+    ctx.clearRect(0, 0, w, h);
+    const s = st.drawing;
+    ctx.strokeStyle = 'rgba(255,80,90,0.55)';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(2, s.r * w);
+    ctx.beginPath();
+    ctx.moveTo(s.points[0].x * w, s.points[0].y * h);
+    for (let i = 1; i < s.points.length; i++) {
+      ctx.lineTo(s.points[i].x * w, s.points[i].y * h);
+    }
+    if (s.points.length === 1) ctx.lineTo(s.points[0].x * w + 0.1, s.points[0].y * h);
+    ctx.stroke();
+  }
+
+  /* ---------------- 檢視切換 ---------------- */
+
+  function setView(v, silent) {
+    if (!st) return;
+    st.view = v;
+
+    if (v === 'result') {
+      el.toggle.textContent = '返回裁切';
+      el.hint.textContent = st.brushOn ? '在畫面上塗抹要移除的區域' : '這是套用濾鏡後的結果';
+      el.overlay.style.cursor = st.brushOn ? 'crosshair' : 'default';
+      renderResult();
+    } else {
+      el.toggle.textContent = '預覽效果';
+      el.hint.textContent = '拖曳四角調整紙張邊界';
+      el.overlay.style.cursor = '';
+      if (st.brushOn) {
+        st.brushOn = false;
+        el.chkBrush.checked = false;
+      }
+      if (!silent && st.src) { drawStage(); renderMini(); }
+    }
+  }
+
+  /* ---------------- 渲染 ---------------- */
+
+  function renderResult() {
+    if (!st || !st.src) return;
+    st.page.strokes = st.strokes;
+    const out = Pipeline.render(st.src, st.page, Pipeline.PREVIEW_DIM);
+    setCanvasSize(out.width, out.height);
+    const ctx = CV.ctx(el.canvas);
+    ctx.clearRect(0, 0, out.width, out.height);
+    ctx.drawImage(out, 0, 0);
+    CV.ctx(el.overlay).clearRect(0, 0, el.overlay.width, el.overlay.height);
+    fit();
+  }
+
+  function renderMini() {
+    if (!st || !st.src) return;
+    st.page.strokes = st.strokes;
+    const out = Pipeline.render(st.src, st.page, 520);
+    const mini = el.mini;
+    mini.width = out.width;
+    mini.height = out.height;
+    CV.ctx(mini).drawImage(out, 0, 0);
+  }
+
+  function scheduleRender() {
+    if (!st) return;
+    clearTimeout(st.timer);
+    st.timer = setTimeout(function () {
+      if (!st) return;
+      if (st.view === 'result') renderResult();
+      else renderMini();
+    }, 110);
+  }
+
+  function onSettingsChange() {
+    scheduleRender();
+  }
+
+  function geometryChanged() {
+    if (st.strokes.length) {
+      st.strokes = [];
+      toast('變更幾何設定後已清除修補痕跡');
+    }
+    scheduleRender();
+  }
+
+  function rotate(delta) {
+    const s = st.page.settings;
+    s.rotate = (((s.rotate || 0) + delta) % 360 + 360) % 360;
+    $('rotLabel').textContent = s.rotate + '°';
+    geometryChanged();
+  }
+
+  function autoDetect() {
+    if (!st || !st.src) return;
+    showLoading(true);
+    setTimeout(function () {
+      const q = Pipeline.detect(st.src);
+      if (q) {
+        st.quad = q.map(function (p) { return { x: p.x, y: p.y }; });
+        st.page.quad = q.map(function (p) { return { x: p.x, y: p.y }; });
+        geometryChanged();
+        drawOverlay();
+        toast('已偵測紙張邊界');
+      } else {
+        toast('找不到明顯的紙張邊界，請手動拖曳四角');
+      }
+      showLoading(false);
+    }, 30);
+  }
+
+  /* ---------------- 套用 ---------------- */
+
+  async function apply() {
+    if (!st) return;
+    showLoading(true);
+    await tick();
+    try {
+      const full = await Pipeline.decode(st.page.file, Pipeline.MAX_DIM);
+      const out = Pipeline.render(full, st.page, Pipeline.MAX_DIM);
+      const page = st.page;
+      page.outCanvas = out;
+      page.thumb = Pipeline.thumb(out, 420);
+      page.strokes = st.strokes;
+      page.settings = Object.assign({}, st.page.settings);
+      page.quad = st.quad.map(function (p) { return { x: p.x, y: p.y }; });
+      page.width = out.width;
+      page.height = out.height;
+      const cb = st.onSave;
+      showLoading(false);
+      close();
+      if (cb) cb(page);
+    } catch (err) {
+      showLoading(false);
+      toast(err.message || '套用失敗');
+    }
+  }
+
+  global.Editor = Editor;
+})(window);
+
+</script>
+<script>
+/* =========================================================
+ * app.js — 應用主控
+ * 相片佇列 / 頁面管理 / 匯出 PDF
+ * ========================================================= */
+(function (global) {
+  'use strict';
+
+  const CV = global.CV;
+  const Pipeline = global.Pipeline;
+  const Filters = global.Filters;
+
+  const App = {};
+  const state = {
+    pages: [],
+    seq: 0,
+    defaults: Pipeline.defaultSettings(),
+    busy: false
+  };
+
+  const COLOR_KEYS = ['preset', 'shadow', 'sharpen', 'contrast', 'brightness', 'denoise', 'moire'];
+
+  function $(id) { return document.getElementById(id); }
+
+  let toastTimer = null;
+  App.toast = function (msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2200);
+  };
+
+  /* ---------------- 加入相片 ---------------- */
+
+  App.addFiles = async function (fileList) {
+    const files = Array.prototype.slice.call(fileList || []);
+    const imgs = files.filter(function (f) {
+      return /^image\//i.test(f.type) || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(f.name || '');
+    });
+    if (!imgs.length) {
+      App.toast('請選擇圖片檔案');
+      return;
+    }
+
+    imgs.forEach(function (f) {
+      state.pages.push({
+        id: ++state.seq,
+        file: f,
+        name: f.name || ('page-' + state.seq),
+        quad: Pipeline.fullQuad(),
+        settings: pickDefaults(),
+        strokes: [],
+        thumb: null,
+        status: 'pending',
+        width: 0,
+        height: 0
+      });
+    });
+
+    renderGrid();
+    updateSummary();
+    processQueue();
+  };
+
+  function pickDefaults() {
+    const s = Pipeline.defaultSettings();
+    COLOR_KEYS.forEach(function (k) { if (k in state.defaults) s[k] = state.defaults[k]; });
+    return s;
+  }
+
+  /* ---------------- 背景處理佇列 ---------------- */
+
+  let running = false;
+
+  async function processQueue() {
+    if (running) return;
+    running = true;
+
+    while (true) {
+      const page = state.pages.find(function (p) { return p.status === 'pending'; });
+      if (!page) break;
+
+      page.status = 'processing';
+      updateCard(page);
+
+      try {
+        const src = await Pipeline.decode(page.file, 1400);
+        page.srcW = src.width;
+        page.srcH = src.height;
+
+        const q = Pipeline.detect(src);
+        if (q) page.quad = q;
+
+        const out = Pipeline.render(src, page, Pipeline.THUMB_DIM);
+        page.thumb = Pipeline.thumb(out, Pipeline.THUMB_DIM);
+        page.width = out.width;
+        page.height = out.height;
+        page.status = 'ready';
+      } catch (err) {
+        page.status = 'error';
+        console.error(err);
+      }
+      updateCard(page);
+      await nextFrame();
+    }
+
+    running = false;
+    updateSummary();
+  }
+
+  function nextFrame() {
+    return new Promise(function (r) { setTimeout(r, 0); });
+  }
+
+  /* ---------------- 頁面列表 ---------------- */
+
+  function renderGrid() {
+    const grid = $('pageGrid');
+    grid.innerHTML = '';
+
+    state.pages.forEach(function (page, i) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.dataset.id = page.id;
+
+      const img = document.createElement('div');
+      img.className = 'card-img' + (page.thumb ? '' : ' placeholder');
+      if (page.thumb) img.style.backgroundImage = 'url(' + page.thumb + ')';
+
+      const num = document.createElement('div');
+      num.className = 'card-num';
+      num.textContent = i + 1;
+
+      const ops = document.createElement('div');
+      ops.className = 'card-ops';
+      [['left', '◀', '往前移'], ['rot', '⟳', '旋轉 90°'], ['right', '▶', '往後移'], ['del', '✕', '刪除']]
+        .forEach(function (o) {
+          const b = document.createElement('button');
+          b.className = 'op' + (o[0] === 'del' ? ' del' : '');
+          b.dataset.act = o[0];
+          b.title = o[2];
+          b.textContent = o[1];
+          ops.appendChild(b);
+        });
+
+      card.appendChild(img);
+      card.appendChild(num);
+      card.appendChild(ops);
+      grid.appendChild(card);
+    });
+
+    const tile = document.createElement('button');
+    tile.className = 'add-tile';
+    tile.id = 'addTile';
+    tile.innerHTML = '<span>＋</span>加入相片';
+    tile.addEventListener('click', function () { $('fileInput').click(); });
+    grid.appendChild(tile);
+
+    $('emptyState').classList.toggle('hidden', state.pages.length > 0);
+    $('pagesArea').classList.toggle('hidden', state.pages.length === 0);
+  }
+
+  function updateCard(page) {
+    const card = $('pageGrid').querySelector('.card[data-id="' + page.id + '"]');
+    if (!card) { renderGrid(); return; }
+    const img = card.querySelector('.card-img');
+    if (page.thumb) {
+      img.style.backgroundImage = 'url(' + page.thumb + ')';
+      img.classList.remove('placeholder');
+    } else {
+      img.classList.add('placeholder');
+    }
+    if (page.status === 'error') {
+      img.style.backgroundImage = 'none';
+      img.classList.add('placeholder');
+    }
+  }
+
+  function updateSummary() {
+    $('pageCount').textContent = state.pages.length;
+    const total = state.pages.reduce(function (a, p) { return a + (p.width * p.height > 0 ? 1 : 0); }, 0);
+    $('sizeInfo').textContent = total ? '· 已處理 ' + total : '';
+  }
+
+  function findPage(id) {
+    return state.pages.find(function (p) { return String(p.id) === String(id); });
+  }
+
+  function movePage(page, delta) {
+    const i = state.pages.indexOf(page);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= state.pages.length) return;
+    state.pages.splice(i, 1);
+    state.pages.splice(j, 0, page);
+    renderGrid();
+  }
+
+  async function rotatePage(page) {
+    const s = page.settings;
+    s.rotate = (((s.rotate || 0) + 90) % 360 + 360) % 360;
+    page.outCanvas = null;
+    try {
+      const src = await Pipeline.decode(page.file, 1000);
+      const out = Pipeline.render(src, page, 420);
+      page.thumb = Pipeline.thumb(out, 420);
+      page.width = out.width;
+      page.height = out.height;
+    } catch (e) { /* 忽略 */ }
+    updateCard(page);
+  }
+
+  function deletePage(page) {
+    const i = state.pages.indexOf(page);
+    if (i < 0) return;
+    state.pages.splice(i, 1);
+    page.outCanvas = null;
+    renderGrid();
+    updateSummary();
+  }
+
+  function openEditor(page) {
+    if (page.status === 'pending' || page.status === 'processing') {
+      App.toast('這張相片還在處理中');
+      return;
+    }
+    if (page.status === 'error') {
+      App.toast('這張相片無法讀取');
+      return;
+    }
+    const idx = state.pages.indexOf(page);
+    global.Editor.open(page, idx, state.pages.length, function (updated) {
+      Object.assign(page, updated);
+      COLOR_KEYS.forEach(function (k) {
+        if (k in updated.settings) state.defaults[k] = updated.settings[k];
+      });
+      renderGrid();
+      updateSummary();
+    });
+  }
+
+  /* ---------------- 全部套用預設 ---------------- */
+
+  async function applyAll() {
+    if (state.busy) return;
+    const targets = state.pages.filter(function (p) { return p.status === 'ready'; });
+    if (!targets.length) { App.toast('還沒有可套用的頁面'); return; }
+
+    state.busy = true;
+    App.toast('正在套用預設到 ' + targets.length + ' 頁…');
+    for (const page of targets) {
+      const keep = { rotate: page.settings.rotate, fine: page.settings.fine, bend: page.settings.bend };
+      page.settings = Object.assign({}, page.settings, keep, pickDefaults());
+      page.outCanvas = null;
+      try {
+        const src = await Pipeline.decode(page.file, 1200);
+        const out = Pipeline.render(src, page, Pipeline.THUMB_DIM);
+        page.thumb = Pipeline.thumb(out, Pipeline.THUMB_DIM);
+        page.width = out.width;
+        page.height = out.height;
+      } catch (e) { /* 忽略 */ }
+      updateCard(page);
+      await nextFrame();
+    }
+    state.busy = false;
+    App.toast('已套用預設設定');
+  }
+
+  /* ---------------- 匯出 ---------------- */
+
+  const QUALITY = {
+    high: { dim: 2200, q: 0.92 },
+    mid: { dim: 1700, q: 0.86 },
+    low: { dim: 1200, q: 0.76 }
+  };
+
+  function canvasToBlob(canvas, type, q) {
+    return new Promise(function (res) { canvas.toBlob(function (b) { res(b); }, type, q); });
+  }
+
+  function openExport() {
+    if (!state.pages.length) { App.toast('先加入相片'); return; }
+    const d = new Date();
+    const pad = function (n) { return String(n).padStart(2, '0'); };
+    $('exName').value = 'scan_' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
+      '_' + pad(d.getHours()) + pad(d.getMinutes());
+    $('exSummary').textContent = '共 ' + state.pages.length + ' 頁，將合併為單一 PDF 檔';
+    $('exForm').classList.remove('hidden');
+    $('exProgress').classList.add('hidden');
+    $('exGo').disabled = false;
+    $('exGo').textContent = '開始匯出';
+    $('exportModal').classList.remove('hidden');
+  }
+
+  function closeExport() {
+    $('exportModal').classList.add('hidden');
+  }
+
+  async function doExport() {
+    const qk = $('exQuality').value;
+    const cfg = QUALITY[qk] || QUALITY.mid;
+    const pageSize = $('exSize').value;
+    const margin = parseFloat($('exMargin').value) || 0;
+    let name = ($('exName').value || 'scan').trim().replace(/\.pdf$/i, '');
+    if (!name) name = 'scan';
+
+    $('exForm').classList.add('hidden');
+    $('exProgress').classList.remove('hidden');
+    $('exGo').disabled = true;
+    closeBtnState(true);
+
+    const items = [];
+    try {
+      for (let i = 0; i < state.pages.length; i++) {
+        const page = state.pages[i];
+        setProgress(i / state.pages.length, '處理第 ' + (i + 1) + ' / ' + state.pages.length + ' 頁…');
+        await nextFrame();
+
+        let canvas = page.outCanvas;
+        if (!canvas) {
+          const src = await Pipeline.decode(page.file, cfg.dim);
+          canvas = Pipeline.render(src, page, cfg.dim);
+        } else if (Math.max(canvas.width, canvas.height) > cfg.dim) {
+          canvas = CV.drawTo(canvas, cfg.dim);
+        }
+
+        const blob = await canvasToBlob(canvas, 'image/jpeg', cfg.q);
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        items.push({ data: buf, w: canvas.width, h: canvas.height });
+        await nextFrame();
+      }
+
+      setProgress(0.95, '組裝 PDF…');
+      await nextFrame();
+
+      const pdf = global.PDF.build(items, { pageSize: pageSize, margin: margin });
+      setProgress(1, '完成，開始下載');
+      await nextFrame();
+
+      download(pdf, name + '.pdf');
+      App.toast('已匯出 ' + state.pages.length + ' 頁 PDF');
+      closeExport();
+    } catch (err) {
+      console.error(err);
+      App.toast('匯出失敗：' + (err.message || '未知錯誤'));
+      $('exProgress').classList.add('hidden');
+      $('exForm').classList.remove('hidden');
+    } finally {
+      closeBtnState(false);
+      $('exGo').disabled = false;
+    }
+  }
+
+  function closeBtnState(disabled) {
+    $('exCancel').disabled = disabled;
+    $('exClose').disabled = disabled;
+  }
+
+  function setProgress(ratio, text) {
+    $('progBar').style.width = Math.round(ratio * 100) + '%';
+    $('progText').textContent = text;
+  }
+
+  function download(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 4000);
+  }
+
+  /* ---------------- 事件綁定 ---------------- */
+
+  function bind() {
+    const fileInput = $('fileInput');
+    const cameraInput = $('cameraInput');
+
+    const pickFiles = function () { fileInput.click(); };
+    const pickCamera = function () { cameraInput.click(); };
+
+    ['btnAdd', 'btnPickFiles', 'mBtnAdd'].forEach(function (id) {
+      const n = $(id); if (n) n.addEventListener('click', pickFiles);
+    });
+    ['btnPickCamera'].forEach(function (id) {
+      const n = $(id); if (n) n.addEventListener('click', pickCamera);
+    });
+
+    [fileInput, cameraInput].forEach(function (inp) {
+      inp.addEventListener('change', function () {
+        if (inp.files && inp.files.length) App.addFiles(inp.files);
+        inp.value = '';
+      });
+    });
+
+    $('btnExport').addEventListener('click', openExport);
+    $('mBtnExport').addEventListener('click', openExport);
+    $('exClose').addEventListener('click', closeExport);
+    $('exCancel').addEventListener('click', closeExport);
+    $('exGo').addEventListener('click', doExport);
+
+    $('btnApplyAll').addEventListener('click', applyAll);
+    $('btnClearAll').addEventListener('click', function () {
+      if (!state.pages.length) return;
+      if (!confirm('確定要清空所有頁面？')) return;
+      state.pages = [];
+      renderGrid();
+      updateSummary();
+    });
+
+    $('btnHelp').addEventListener('click', function () { $('helpModal').classList.remove('hidden'); });
+    $('helpClose').addEventListener('click', function () { $('helpModal').classList.add('hidden'); });
+    $('helpOk').addEventListener('click', function () { $('helpModal').classList.add('hidden'); });
+
+    $('pageGrid').addEventListener('click', function (e) {
+      const card = e.target.closest('.card');
+      if (!card) return;
+      const page = findPage(card.dataset.id);
+      if (!page) return;
+      const op = e.target.closest('.op');
+      if (!op) { openEditor(page); return; }
+      const act = op.dataset.act;
+      if (act === 'del') deletePage(page);
+      else if (act === 'rot') rotatePage(page);
+      else if (act === 'left') movePage(page, -1);
+      else if (act === 'right') movePage(page, 1);
+    });
+
+    // 拖放
+    const dz = $('dropzone');
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      document.addEventListener(ev, function (e) {
+        if (!e.dataTransfer || !Array.prototype.includes.call(e.dataTransfer.types, 'Files')) return;
+        e.preventDefault();
+        dz.classList.add('dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      document.addEventListener(ev, function (e) {
+        if (ev === 'drop') {
+          e.preventDefault();
+          if (e.dataTransfer && e.dataTransfer.files.length) App.addFiles(e.dataTransfer.files);
+        }
+        if (ev === 'dragleave' && e.relatedTarget) return;
+        dz.classList.remove('dragover');
+      });
+    });
+
+    // 貼上
+    document.addEventListener('paste', function (e) {
+      if (!e.clipboardData) return;
+      const files = [];
+      for (let i = 0; i < e.clipboardData.items.length; i++) {
+        const it = e.clipboardData.items[i];
+        if (it.kind === 'file') {
+          const f = it.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+      if (files.length) {
+        e.preventDefault();
+        App.addFiles(files);
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        if (!$('helpModal').classList.contains('hidden')) $('helpModal').classList.add('hidden');
+        else if (!$('exportModal').classList.contains('hidden')) closeExport();
+      }
+    });
+  }
+
+  /* ---------------- 啟動 ---------------- */
+
+  function start() {
+    bind();
+    renderGrid();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+
+  global.App = App;
+})(window);
+
+</script>
+</body>
+</html>
